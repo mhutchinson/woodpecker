@@ -1,11 +1,12 @@
 package main
 
 import (
+	"context"
 	"flag"
+	"fmt"
 	"io"
 	"net/http"
 
-	"github.com/rivo/tview"
 	"github.com/transparency-dev/formats/log"
 	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
@@ -20,20 +21,40 @@ func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
 
-	logClient := newLogClient()
-	textArea := tview.NewTextView()
-	textArea.SetBorder(true).SetTitle("Hello, world!")
-	go func() {
-		cp, err := logClient.getCheckpoint()
-		if err != nil {
-			klog.Warning(err)
-		}
-		text := string(cp.Marshal())
-		textArea.SetText(text)
-	}()
-	if err := tview.NewApplication().SetRoot(textArea, true).Run(); err != nil {
+	model := &ViewModel{}
+	controller := Controller{
+		Model:     model,
+		LogClient: newLogClient(),
+	}
+	controller.RefreshCheckpoint()
+	if model.Checkpoint != nil && model.Checkpoint.Size > 0 {
+		controller.GetLeaf(model.Checkpoint.Size - 1)
+	}
+	view := NewView(controller, model)
+	if err := view.Run(context.Background()); err != nil {
 		panic(err)
 	}
+}
+
+type Controller struct {
+	Model     *ViewModel
+	LogClient *logClient
+}
+
+func (c Controller) RefreshCheckpoint() {
+	c.Model.Checkpoint, c.Model.Error = c.LogClient.getCheckpoint()
+}
+
+func (c Controller) GetLeaf(index uint64) {
+	if index >= c.Model.Checkpoint.Size {
+		c.Model.Error = fmt.Errorf("Cannot fetch leaf bigger than checkpoint size %d", c.Model.Checkpoint.Size)
+		return
+	}
+	c.Model.Leaf = Leaf{
+		Contents: []byte(fmt.Sprintf("hello %d", index)),
+		Index:    index,
+	}
+	c.Model.Error = nil
 }
 
 func newLogClient() *logClient {
