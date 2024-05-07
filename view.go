@@ -5,16 +5,20 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gdamore/tcell/v2"
+	"github.com/mhutchinson/woodpecker/model"
 	"github.com/rivo/tview"
 )
 
 type Callbacks interface {
 	RefreshCheckpoint()
 	GetLeaf(uint64)
+	PrevLeaf()
+	NextLeaf()
 }
 
 type View struct {
-	Model     *ViewModel
+	Model     *model.ViewModel
 	Callbacks Callbacks
 
 	app      *tview.Application
@@ -23,7 +27,7 @@ type View struct {
 	errArea  *tview.TextView
 }
 
-func NewView(cb Callbacks, m *ViewModel) View {
+func NewView(cb Callbacks, m *model.ViewModel) View {
 	grid := tview.NewGrid()
 	grid.SetRows(8, 0, 3).SetColumns(0).SetBorders(true)
 	cpArea := tview.NewTextView()
@@ -49,32 +53,59 @@ func NewView(cb Callbacks, m *ViewModel) View {
 }
 
 func (v View) Run(ctx context.Context) error {
+	v.app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		switch event.Key() {
+		case tcell.KeyLeft:
+			v.Callbacks.PrevLeaf()
+			return nil
+		case tcell.KeyRight:
+			v.Callbacks.NextLeaf()
+			return nil
+		}
+		return event
+	})
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-v.Model.Dirty:
+				v.refreshCheckpoint()
+				v.refreshLeaf()
+				v.app.Draw()
+			}
+		}
+	}()
+	// TODO(mhutchinson): put this in the controller
 	go func() {
 		t := time.NewTicker(5 * time.Second)
 		for {
+			v.refreshCheckpoint()
+			v.app.Draw()
 			select {
 			case <-ctx.Done():
 				return
 			case <-t.C:
 			}
-			v.refreshCheckpoint()
-			v.app.Draw()
 		}
 	}()
-	v.leafArea.SetTitle(fmt.Sprintf("Leaf %d", v.Model.Leaf.Index))
-	v.leafArea.SetText(string(v.Model.Leaf.Contents))
 	return v.app.Run()
+}
+
+func (v View) refreshLeaf() {
+	v.leafArea.SetTitle(fmt.Sprintf("Leaf %d", v.Model.GetLeaf().Index))
+	v.leafArea.SetText(string(v.Model.GetLeaf().Contents))
 }
 
 func (v View) refreshCheckpoint() {
 	v.Callbacks.RefreshCheckpoint()
-	cp := v.Model.Checkpoint
+	cp := v.Model.GetCheckpoint()
 	if cp != nil {
 		text := string(cp.Marshal())
 		v.cpArea.SetText(text)
 	}
-	if v.Model.Error != nil {
-		v.errArea.SetText(fmt.Sprint(v.Model.Error))
+	if v.Model.GetError() != nil {
+		v.errArea.SetText(fmt.Sprint(v.Model.GetError))
 	} else {
 		v.errArea.SetText("")
 	}
