@@ -33,15 +33,18 @@ func main() {
 	flag.Parse()
 	ctx := context.Background()
 
-	logOrigins := make([]string, len(clients))
+	logClients := make(map[string]logClient, len(clients))
+	logOrigins := make([]string, 0, len(clients))
 	for _, c := range clients {
+		logClients[c.GetOrigin()] = c
 		logOrigins = append(logOrigins, c.GetOrigin())
 	}
 	model := model.NewViewModel(logOrigins)
-	controller := Controller{
-		Model:     model,
-		LogClient: clients[1],
+	controller := &Controller{
+		Model:      model,
+		LogClients: logClients,
 	}
+	controller.SelectLog(clients[0].GetOrigin())
 	go func() {
 		t := time.NewTicker(5 * time.Second)
 		for {
@@ -53,7 +56,6 @@ func main() {
 			}
 		}
 	}()
-	controller.InitFromLog()
 	view := NewView(controller, model)
 	if err := view.Run(context.Background()); err != nil {
 		panic(err)
@@ -61,40 +63,49 @@ func main() {
 }
 
 type Controller struct {
-	Model     *model.ViewModel
-	LogClient logClient
+	Model      *model.ViewModel
+	LogClients map[string]logClient
+
+	current logClient
 }
 
-func (c Controller) InitFromLog() {
+func (c *Controller) SelectLog(o string) {
+	if n, ok := c.LogClients[o]; ok {
+		c.current = n
+		c.InitFromLog()
+	}
+}
+
+func (c *Controller) InitFromLog() {
 	c.RefreshCheckpoint()
 	if c.Model.GetCheckpoint() != nil && c.Model.GetCheckpoint().Size > 0 {
 		c.GetLeaf(c.Model.GetCheckpoint().Size - 1)
 	}
 }
 
-func (c Controller) RefreshCheckpoint() {
-	cp, err := c.LogClient.GetCheckpoint()
+func (c *Controller) RefreshCheckpoint() {
+	cp, err := c.current.GetCheckpoint()
 	c.Model.SetCheckpoint(cp, err)
 }
 
-func (c Controller) GetLeaf(index uint64) {
+func (c *Controller) GetLeaf(index uint64) {
 	size := c.Model.GetCheckpoint().Size
 	if index >= size {
 		c.Model.SetLeaf(c.Model.GetLeaf(), fmt.Errorf("Cannot fetch leaf bigger than checkpoint size %d", size))
 		return
 	}
-	leaf, err := c.LogClient.GetLeaf(index)
+	leaf, err := c.current.GetLeaf(index)
 	c.Model.SetLeaf(model.Leaf{
 		Contents: leaf,
 		Index:    index,
 	}, err)
 }
 
-func (c Controller) PrevLeaf() {
+func (c *Controller) PrevLeaf() {
 	c.GetLeaf(c.Model.GetLeaf().Index - 1)
 }
 
-func (c Controller) NextLeaf() {
+func (c *Controller) NextLeaf() {
 	c.GetLeaf(c.Model.GetLeaf().Index + 1)
 }
 

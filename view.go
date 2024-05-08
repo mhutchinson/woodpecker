@@ -14,6 +14,7 @@ type Callbacks interface {
 	GetLeaf(uint64)
 	PrevLeaf()
 	NextLeaf()
+	SelectLog(o string)
 }
 
 type View struct {
@@ -22,7 +23,9 @@ type View struct {
 
 	app      *tview.Application
 	cpArea   *tview.TextView
-	leafArea *tview.TextView
+	mainArea *tview.Pages
+	leafPage *tview.TextView
+	logsPage *tview.List
 	errArea  *tview.TextView
 }
 
@@ -30,14 +33,38 @@ func NewView(cb Callbacks, m *model.ViewModel) View {
 	grid := tview.NewGrid()
 	grid.SetRows(8, 0, 3).SetColumns(0).SetBorders(true)
 	cpArea := tview.NewTextView()
-	leafArea := tview.NewTextView()
-	leafArea.SetBorder(true).SetTitle("No leaf loaded")
+
+	mainArea := tview.NewPages()
+	leafPage := tview.NewTextView()
+	leafPage.SetBorder(true).SetTitle("No leaf loaded")
+	logsPage := tview.NewList()
+	logsPage.SetBorder(true).SetTitle("Choose a log to investigate")
+	for i, o := range m.GetLogOrigins() {
+		logsPage.AddItem(o, "", rune('a'+i), func() {
+			cb.SelectLog(o)
+		})
+	}
+	exitLogSelector := func() {
+		mainArea.SwitchToPage("leaf")
+	}
+	logsPage.AddItem("eXit", "eXplore the selected log", rune('x'), exitLogSelector)
+	logsPage.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		switch event.Key() {
+		case tcell.KeyEscape:
+			exitLogSelector()
+			return nil
+		}
+		return event
+	})
+	mainArea.AddPage("logs", logsPage, true, true)
+	mainArea.AddPage("leaf", leafPage, true, true)
+
 	errArea := tview.NewTextView()
 	app := tview.NewApplication()
 	app.SetRoot(grid, true)
 
 	grid.AddItem(cpArea, 0, 0, 1, 1, 0, 0, false)
-	grid.AddItem(leafArea, 1, 0, 1, 1, 0, 0, false)
+	grid.AddItem(mainArea, 1, 0, 1, 1, 0, 0, false)
 	grid.AddItem(errArea, 2, 0, 1, 1, 0, 0, false)
 
 	v := View{
@@ -45,7 +72,9 @@ func NewView(cb Callbacks, m *model.ViewModel) View {
 		Callbacks: cb,
 		app:       app,
 		cpArea:    cpArea,
-		leafArea:  leafArea,
+		mainArea:  mainArea,
+		leafPage:  leafPage,
+		logsPage:  logsPage,
 		errArea:   errArea,
 	}
 	return v
@@ -59,6 +88,12 @@ func (v View) Run(ctx context.Context) error {
 			return nil
 		case tcell.KeyRight:
 			v.Callbacks.NextLeaf()
+			return nil
+		}
+		switch event.Rune() {
+		case 'l':
+			v.mainArea.SwitchToPage("logs")
+			v.app.SetFocus(v.logsPage)
 			return nil
 		}
 		return event
@@ -84,8 +119,8 @@ func (v View) refreshFromModel() {
 		v.cpArea.SetText(text)
 	}
 
-	v.leafArea.SetTitle(fmt.Sprintf("Leaf %d", v.Model.GetLeaf().Index))
-	v.leafArea.SetText(string(v.Model.GetLeaf().Contents))
+	v.leafPage.SetTitle(fmt.Sprintf("Leaf %d", v.Model.GetLeaf().Index))
+	v.leafPage.SetText(string(v.Model.GetLeaf().Contents))
 
 	if v.Model.GetError() != nil {
 		v.errArea.SetText(fmt.Sprintf("Error: %v", v.Model.GetError()))
