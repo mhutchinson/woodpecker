@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/mhutchinson/woodpecker/model"
 	"github.com/transparency-dev/formats/log"
@@ -24,6 +25,7 @@ var (
 func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
+	ctx := context.Background()
 
 	logRoot, err := url.Parse("https://api.transparency.dev/armored-witness-firmware/prod/log/1/")
 	if err != nil {
@@ -36,9 +38,20 @@ func main() {
 	fetcher := newFetcher(logRoot)
 	controller := Controller{
 		Model:     model,
-		LogClient: newLogClient(fetcher),
+		LogClient: newServerlessLogClient(fetcher),
 		Fetcher:   fetcher,
 	}
+	go func() {
+		t := time.NewTicker(5 * time.Second)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				controller.RefreshCheckpoint()
+			}
+		}
+	}()
 	controller.RefreshCheckpoint()
 	if model.GetCheckpoint() != nil && model.GetCheckpoint().Size > 0 {
 		controller.GetLeaf(model.GetCheckpoint().Size - 1)
@@ -51,17 +64,19 @@ func main() {
 
 type Controller struct {
 	Model     *model.ViewModel
-	LogClient *logClient
+	LogClient logClient
 	Fetcher   client.Fetcher
 }
 
 func (c Controller) RefreshCheckpoint() {
-	c.Model.SetCheckpoint(c.LogClient.getCheckpoint())
+	cp, err := c.LogClient.GetCheckpoint()
+	c.Model.SetCheckpoint(cp, err)
 }
 
 func (c Controller) GetLeaf(index uint64) {
-	if index >= c.Model.GetCheckpoint().Size {
-		c.Model.SetLeaf(c.Model.GetLeaf(), fmt.Errorf("Cannot fetch leaf bigger than checkpoint size %d", c.Model.GetCheckpoint().Size))
+	size := c.Model.GetCheckpoint().Size
+	if index >= size {
+		c.Model.SetLeaf(c.Model.GetLeaf(), fmt.Errorf("Cannot fetch leaf bigger than checkpoint size %d", size))
 		return
 	}
 	leaf, err := client.GetLeaf(context.Background(), c.Fetcher, index)
@@ -79,27 +94,37 @@ func (c Controller) NextLeaf() {
 	c.GetLeaf(c.Model.GetLeaf().Index + 1)
 }
 
-func newLogClient(fetcher client.Fetcher) *logClient {
+func newServerlessLogClient(fetcher client.Fetcher) logClient {
 	verifier, err := note.NewVerifier(*vstring)
 	if err != nil {
 		panic(err)
 	}
-	return &logClient{
+	return &serverlessLogClient{
 		origin:   *origin,
 		verifier: verifier,
 		fetcher:  fetcher,
 	}
 }
 
-type logClient struct {
+type logClient interface {
+	GetCheckpoint() (*log.Checkpoint, error)
+	GetLeaf(uint64) ([]byte, error)
+}
+
+type serverlessLogClient struct {
 	origin   string
 	verifier note.Verifier
 	fetcher  client.Fetcher
 }
 
-func (lc *logClient) getCheckpoint() (*log.Checkpoint, error) {
-	cp, _, _, err := client.FetchCheckpoint(context.Background(), lc.fetcher, lc.verifier, lc.origin)
+func (c *serverlessLogClient) GetCheckpoint() (*log.Checkpoint, error) {
+	cp, _, _, err := client.FetchCheckpoint(context.Background(), c.fetcher, c.verifier, c.origin)
 	return cp, err
+}
+
+func (c *serverlessLogClient) GetLeaf(index uint64) ([]byte, error) {
+	leaf, err := client.GetLeaf(context.Background(), c.fetcher, index)
+	return leaf, err
 }
 
 // newFetcher creates a Fetcher for the log at the given root location.

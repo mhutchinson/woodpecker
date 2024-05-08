@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/mhutchinson/woodpecker/model"
@@ -70,42 +69,26 @@ func (v View) Run(ctx context.Context) error {
 			case <-ctx.Done():
 				return
 			case <-v.Model.Dirty:
-				v.refreshCheckpoint()
-				v.refreshLeaf()
+				v.refreshFromModel()
 				v.app.Draw()
-			}
-		}
-	}()
-	// TODO(mhutchinson): put this in the controller
-	go func() {
-		t := time.NewTicker(5 * time.Second)
-		for {
-			v.refreshCheckpoint()
-			v.app.Draw()
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
 			}
 		}
 	}()
 	return v.app.Run()
 }
 
-func (v View) refreshLeaf() {
-	v.leafArea.SetTitle(fmt.Sprintf("Leaf %d", v.Model.GetLeaf().Index))
-	v.leafArea.SetText(string(v.Model.GetLeaf().Contents))
-}
-
-func (v View) refreshCheckpoint() {
-	v.Callbacks.RefreshCheckpoint()
+func (v View) refreshFromModel() {
 	cp := v.Model.GetCheckpoint()
 	if cp != nil {
 		text := string(cp.Marshal())
 		v.cpArea.SetText(text)
 	}
+
+	v.leafArea.SetTitle(fmt.Sprintf("Leaf %d", v.Model.GetLeaf().Index))
+	v.leafArea.SetText(string(v.Model.GetLeaf().Contents))
+
 	if v.Model.GetError() != nil {
-		v.errArea.SetText(fmt.Sprint(v.Model.GetError))
+		v.errArea.SetText(fmt.Sprintf("Error: %v", v.Model.GetError()))
 	} else {
 		v.errArea.SetText("")
 	}
