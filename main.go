@@ -25,6 +25,9 @@ var (
 		newServerlessLogClient("https://api.transparency.dev/armored-witness-firmware/ci/log/4/",
 			"transparency.dev/armored-witness/firmware_transparency/ci/4",
 			"transparency.dev-aw-ftlog-ci-4+30fe79e3+AUDoas+smwQDTlYbTzbEcAW+N6WyvB/4CysMWjpnRgat"),
+		newServerlessLogClient("https://raw.githubusercontent.com/f-secure-foundry/armory-drive-log/master/log/",
+			"Armory Drive Prod 2",
+			"armory-drive-log+16541b8f+AYDPmG5pQp4Bgu0a1mr5uDZ196+t8lIVIfWQSPWmP+Jv"),
 	}
 )
 
