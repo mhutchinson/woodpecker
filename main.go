@@ -22,6 +22,9 @@ var (
 		newServerlessLogClient("https://api.transparency.dev/armored-witness-firmware/prod/log/1/",
 			"transparency.dev/armored-witness/firmware_transparency/prod/1",
 			"transparency.dev-aw-ftlog-prod-1+3e6d87ee+Aa3qdhefd2cc/98jV3blslJT2L+iFR8WKHeGcgFmyjnt"),
+		newServerlessLogClient("https://api.transparency.dev/armored-witness-firmware/ci/log/4/",
+			"transparency.dev/armored-witness/firmware_transparency/ci/4",
+			"transparency.dev-aw-ftlog-ci-4+30fe79e3+AUDoas+smwQDTlYbTzbEcAW+N6WyvB/4CysMWjpnRgat"),
 	}
 )
 
@@ -36,7 +39,7 @@ func main() {
 	}
 	controller := Controller{
 		Model:     model,
-		LogClient: clients[0],
+		LogClient: clients[1],
 	}
 	go func() {
 		t := time.NewTicker(5 * time.Second)
@@ -49,10 +52,7 @@ func main() {
 			}
 		}
 	}()
-	controller.RefreshCheckpoint()
-	if model.GetCheckpoint() != nil && model.GetCheckpoint().Size > 0 {
-		controller.GetLeaf(model.GetCheckpoint().Size - 1)
-	}
+	controller.InitFromLog()
 	view := NewView(controller, model)
 	if err := view.Run(context.Background()); err != nil {
 		panic(err)
@@ -62,6 +62,13 @@ func main() {
 type Controller struct {
 	Model     *model.ViewModel
 	LogClient logClient
+}
+
+func (c Controller) InitFromLog() {
+	c.RefreshCheckpoint()
+	if c.Model.GetCheckpoint() != nil && c.Model.GetCheckpoint().Size > 0 {
+		c.GetLeaf(c.Model.GetCheckpoint().Size - 1)
+	}
 }
 
 func (c Controller) RefreshCheckpoint() {
