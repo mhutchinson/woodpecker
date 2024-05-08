@@ -28,6 +28,9 @@ var (
 		newServerlessLogClient("https://raw.githubusercontent.com/f-secure-foundry/armory-drive-log/master/log/",
 			"Armory Drive Prod 2",
 			"armory-drive-log+16541b8f+AYDPmG5pQp4Bgu0a1mr5uDZ196+t8lIVIfWQSPWmP+Jv"),
+		newServerlessLogClient("https://fwupd.org/ftlog/lvfs/",
+			"lvfs",
+			"lvfs+7908d142+ASnlGgOh+634tcE/2Lp3wV7k/cLoU6ncawmb/BLC1oMU"),
 	}
 )
 
