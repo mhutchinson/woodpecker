@@ -33,10 +33,11 @@ func main() {
 	flag.Parse()
 	ctx := context.Background()
 
-	dirtyChannel := make(chan bool, 1)
-	model := &model.ViewModel{
-		Dirty: dirtyChannel,
+	logOrigins := make([]string, len(clients))
+	for _, c := range clients {
+		logOrigins = append(logOrigins, c.GetOrigin())
 	}
+	model := model.NewViewModel(logOrigins)
 	controller := Controller{
 		Model:     model,
 		LogClient: clients[1],
@@ -115,6 +116,7 @@ func newServerlessLogClient(lr string, origin string, vkey string) logClient {
 }
 
 type logClient interface {
+	GetOrigin() string
 	GetCheckpoint() (*log.Checkpoint, error)
 	GetLeaf(uint64) ([]byte, error)
 }
@@ -123,6 +125,10 @@ type serverlessLogClient struct {
 	origin   string
 	verifier note.Verifier
 	fetcher  client.Fetcher
+}
+
+func (c *serverlessLogClient) GetOrigin() string {
+	return c.origin
 }
 
 func (c *serverlessLogClient) GetCheckpoint() (*log.Checkpoint, error) {
