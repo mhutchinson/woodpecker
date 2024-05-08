@@ -18,8 +18,11 @@ import (
 )
 
 var (
-	origin  = flag.String("origin", "transparency.dev/armored-witness/firmware_transparency/prod/1", "The origin of the log")
-	vstring = flag.String("vkey", "transparency.dev-aw-ftlog-prod-1+3e6d87ee+Aa3qdhefd2cc/98jV3blslJT2L+iFR8WKHeGcgFmyjnt", "The verifier string for the log")
+	clients = []logClient{
+		newServerlessLogClient("https://api.transparency.dev/armored-witness-firmware/prod/log/1/",
+			"transparency.dev/armored-witness/firmware_transparency/prod/1",
+			"transparency.dev-aw-ftlog-prod-1+3e6d87ee+Aa3qdhefd2cc/98jV3blslJT2L+iFR8WKHeGcgFmyjnt"),
+	}
 )
 
 func main() {
@@ -27,19 +30,13 @@ func main() {
 	flag.Parse()
 	ctx := context.Background()
 
-	logRoot, err := url.Parse("https://api.transparency.dev/armored-witness-firmware/prod/log/1/")
-	if err != nil {
-		klog.Exit(err)
-	}
 	dirtyChannel := make(chan bool, 1)
 	model := &model.ViewModel{
 		Dirty: dirtyChannel,
 	}
-	fetcher := newFetcher(logRoot)
 	controller := Controller{
 		Model:     model,
-		LogClient: newServerlessLogClient(fetcher),
-		Fetcher:   fetcher,
+		LogClient: clients[0],
 	}
 	go func() {
 		t := time.NewTicker(5 * time.Second)
@@ -65,7 +62,6 @@ func main() {
 type Controller struct {
 	Model     *model.ViewModel
 	LogClient logClient
-	Fetcher   client.Fetcher
 }
 
 func (c Controller) RefreshCheckpoint() {
@@ -79,7 +75,7 @@ func (c Controller) GetLeaf(index uint64) {
 		c.Model.SetLeaf(c.Model.GetLeaf(), fmt.Errorf("Cannot fetch leaf bigger than checkpoint size %d", size))
 		return
 	}
-	leaf, err := client.GetLeaf(context.Background(), c.Fetcher, index)
+	leaf, err := c.LogClient.GetLeaf(index)
 	c.Model.SetLeaf(model.Leaf{
 		Contents: leaf,
 		Index:    index,
@@ -94,13 +90,18 @@ func (c Controller) NextLeaf() {
 	c.GetLeaf(c.Model.GetLeaf().Index + 1)
 }
 
-func newServerlessLogClient(fetcher client.Fetcher) logClient {
-	verifier, err := note.NewVerifier(*vstring)
+func newServerlessLogClient(lr string, origin string, vkey string) logClient {
+	logRoot, err := url.Parse(lr)
 	if err != nil {
-		panic(err)
+		klog.Exit(err)
+	}
+	fetcher := newFetcher(logRoot)
+	verifier, err := note.NewVerifier(vkey)
+	if err != nil {
+		klog.Exit(err)
 	}
 	return &serverlessLogClient{
-		origin:   *origin,
+		origin:   origin,
 		verifier: verifier,
 		fetcher:  fetcher,
 	}
