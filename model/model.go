@@ -46,6 +46,10 @@ func (m *ViewModel) GetCheckpoint() *log.Checkpoint {
 	return m.checkpoint
 }
 
+func (m *ViewModel) GetWitnessed() *log.Checkpoint {
+	return m.witnessed
+}
+
 func (m *ViewModel) GetLeaf() Leaf {
 	return m.leaf
 }

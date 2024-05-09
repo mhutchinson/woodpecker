@@ -23,6 +23,7 @@ type View struct {
 
 	app      *tview.Application
 	cpArea   *tview.TextView
+	witArea  *tview.TextView
 	mainArea *tview.Pages
 	leafPage *tview.TextView
 	logsPage *tview.List
@@ -31,8 +32,11 @@ type View struct {
 
 func NewView(cb Callbacks, m *model.ViewModel) View {
 	grid := tview.NewGrid()
-	grid.SetRows(8, 0, 3).SetColumns(0).SetBorders(true)
+	grid.SetRows(8, 0, 3).SetColumns(0)
 	cpArea := tview.NewTextView()
+	cpArea.SetBorder(true).SetTitle("Log Checkpoint")
+	witnessedArea := tview.NewTextView()
+	witnessedArea.SetBorder(true).SetTitle("Witnessed Checkpoint")
 
 	mainArea := tview.NewPages()
 	leafPage := tview.NewTextView()
@@ -63,7 +67,10 @@ func NewView(cb Callbacks, m *model.ViewModel) View {
 	app := tview.NewApplication()
 	app.SetRoot(grid, true)
 
-	grid.AddItem(cpArea, 0, 0, 1, 1, 0, 0, false)
+	cpFlex := tview.NewFlex()
+	cpFlex.AddItem(cpArea, 0, 1, false)
+	cpFlex.AddItem(witnessedArea, 0, 1, false)
+	grid.AddItem(cpFlex, 0, 0, 1, 1, 0, 0, false)
 	grid.AddItem(mainArea, 1, 0, 1, 1, 0, 0, false)
 	grid.AddItem(errArea, 2, 0, 1, 1, 0, 0, false)
 
@@ -72,6 +79,7 @@ func NewView(cb Callbacks, m *model.ViewModel) View {
 		Callbacks: cb,
 		app:       app,
 		cpArea:    cpArea,
+		witArea:   witnessedArea,
 		mainArea:  mainArea,
 		leafPage:  leafPage,
 		logsPage:  logsPage,
@@ -117,6 +125,11 @@ func (v View) refreshFromModel() {
 	if cp != nil {
 		text := string(cp.Marshal())
 		v.cpArea.SetText(text)
+	}
+	wit := v.Model.GetWitnessed()
+	if wit != nil {
+		text := string(wit.Marshal())
+		v.witArea.SetText(text)
 	}
 
 	v.leafPage.SetTitle(fmt.Sprintf("Leaf %d", v.Model.GetLeaf().Index))
