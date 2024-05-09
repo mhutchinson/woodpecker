@@ -11,11 +11,14 @@ import (
 	"time"
 
 	"github.com/mhutchinson/woodpecker/model"
+	distclient "github.com/transparency-dev/distributor/client"
 	"github.com/transparency-dev/formats/log"
 	"github.com/transparency-dev/serverless-log/client"
 	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
 )
+
+const distURL = "https://api.transparency.dev"
 
 var (
 	clients = []logClient{
@@ -47,8 +50,10 @@ func main() {
 	}
 	model := model.NewViewModel(logOrigins)
 	controller := &Controller{
-		Model:      model,
-		LogClients: logClients,
+		Model:       model,
+		LogClients:  logClients,
+		Distributor: *distclient.NewRestDistributor(distURL, http.DefaultClient),
+		witnessSigs: 2,
 	}
 	controller.SelectLog(clients[0].GetOrigin())
 	go func() {
@@ -68,11 +73,36 @@ func main() {
 	}
 }
 
-type Controller struct {
-	Model      *model.ViewModel
-	LogClients map[string]logClient
+func NewController(model *model.ViewModel, logClients map[string]logClient, distributor distclient.RestDistributor) *Controller {
+	witKeys, err := distributor.GetWitnesses()
+	if err != nil {
+		panic(fmt.Sprintf("Witnesses not available: %v", err))
+	}
+	witVerifiers := make([]note.Verifier, 0, len(witKeys))
+	for _, k := range witKeys {
+		v, err := note.NewVerifier(k)
+		if err != nil {
+			panic(fmt.Sprintf("Invalid witness key: %v", err))
+		}
+		witVerifiers = append(witVerifiers, v)
+	}
+	return &Controller{
+		Model:        model,
+		LogClients:   logClients,
+		Distributor:  distributor,
+		witVerifiers: witVerifiers,
+		witnessSigs:  2,
+	}
+}
 
-	current logClient
+type Controller struct {
+	Model        *model.ViewModel
+	LogClients   map[string]logClient
+	Distributor  distclient.RestDistributor
+	witVerifiers []note.Verifier
+
+	current     logClient
+	witnessSigs uint
 }
 
 func (c *Controller) SelectLog(o string) {
@@ -90,8 +120,20 @@ func (c *Controller) InitFromLog() {
 }
 
 func (c *Controller) RefreshCheckpoint() {
+	witnessed := make(chan *log.Checkpoint)
+	go func() {
+		logID := distclient.LogID(log.ID(c.current.GetOrigin()))
+		bs, err := c.Distributor.GetCheckpointN(logID, c.witnessSigs)
+		if err != nil {
+			witnessed <- nil
+			return
+		}
+		cp, _, _, _ := log.ParseCheckpoint(bs, c.current.GetOrigin(), c.current.GetVerifier(), c.witVerifiers...)
+		witnessed <- cp
+	}()
 	cp, err := c.current.GetCheckpoint()
-	c.Model.SetCheckpoint(cp, err)
+	wCP := <-witnessed
+	c.Model.SetCheckpoint(cp, wCP, err)
 }
 
 func (c *Controller) GetLeaf(index uint64) {
@@ -134,6 +176,7 @@ func newServerlessLogClient(lr string, origin string, vkey string) logClient {
 
 type logClient interface {
 	GetOrigin() string
+	GetVerifier() note.Verifier
 	GetCheckpoint() (*log.Checkpoint, error)
 	GetLeaf(uint64) ([]byte, error)
 }
@@ -146,6 +189,10 @@ type serverlessLogClient struct {
 
 func (c *serverlessLogClient) GetOrigin() string {
 	return c.origin
+}
+
+func (c *serverlessLogClient) GetVerifier() note.Verifier {
+	return c.verifier
 }
 
 func (c *serverlessLogClient) GetCheckpoint() (*log.Checkpoint, error) {

@@ -16,8 +16,10 @@ github.com/rivo/uniseg v0.2.0/go.mod h1:J6wj4VEh+S6ZtnVlnTBMWIodfgj8LQOQFoIToxlJ
 github.com/rivo/uniseg v0.4.3/go.mod h1:FN3SvrM+Zdj16jyLfmOkMNblXMcoc8DfTHruCPUcx88=
 github.com/rivo/uniseg v0.4.7 h1:WUdvkW8uEhrYfLC4ZzdpI2ztxP1I582+49Oc5Mq64VQ=
 github.com/rivo/uniseg v0.4.7/go.mod h1:FN3SvrM+Zdj16jyLfmOkMNblXMcoc8DfTHruCPUcx88=
-github.com/transparency-dev/formats v0.0.0-20240506092902-ee1c0666da4a h1:lOv8kO0MEHj+bNVIoMeo+d0PV8K8BSns0DjPwx/LLPI=
-github.com/transparency-dev/formats v0.0.0-20240506092902-ee1c0666da4a/go.mod h1:tyFqZYwVHIv/ap0obDip//541gI2TL7SwuWkhlg5WXc=
+github.com/transparency-dev/distributor v0.1.2 h1:p/KFBIQtONw9hSYxNmgVdDUm/NkkqtHaeQoOtYRlHG0=
+github.com/transparency-dev/distributor v0.1.2/go.mod h1:A2Am7Wbexqd5jq+pQdqO2bU2FYdd99e3VR+Egt7w+Vk=
+github.com/transparency-dev/formats v0.0.0-20240509084828-19d17b8f5c5d h1:ityX6u3Fm3QFF7c6kUFvpYR6WCnKzPqX85ZMP3yFPWU=
+github.com/transparency-dev/formats v0.0.0-20240509084828-19d17b8f5c5d/go.mod h1:tyFqZYwVHIv/ap0obDip//541gI2TL7SwuWkhlg5WXc=
 github.com/transparency-dev/merkle v0.0.2 h1:Q9nBoQcZcgPamMkGn7ghV8XiTZ/kRxn1yCG81+twTK4=
 github.com/transparency-dev/merkle v0.0.2/go.mod h1:pqSy+OXefQ1EDUVmAJ8MUhHB9TXGuzVAT58PqBoHz1A=
 github.com/transparency-dev/serverless-log v0.0.0-20240507164215-bf5370b31f94 h1:8GAer7RRWStTkt3uA/z5xeow0Gx2RfLo/FglSp4Mgio=
@@ -42,8 +44,9 @@ golang.org/x/sys v0.0.0-20210615035016-665e8c7367d1/go.mod h1:oPkhp1MJrh7nUepCBc
 golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/sys v0.5.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
-golang.org/x/sys v0.17.0 h1:25cE3gD+tdBA7lp7QfhuV+rJiE9YXTcS3VG1SqssI/Y=
 golang.org/x/sys v0.17.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
+golang.org/x/sys v0.18.0 h1:DBdB3niSjOA/O0blCZBqDefyWNYveAYMNF1Wum0DYQ4=
+golang.org/x/sys v0.18.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
 golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1/go.mod h1:bj7SfCRtBDWHUb9snDiAeCFNEtKQo2Wmx5Cou7ajbmo=
 golang.org/x/term v0.0.0-20210927222741-03fcf44c2211/go.mod h1:jbD1KX2456YbFQfuXm/mYQcufACuNUgVhRMnK/tPxf8=
 golang.org/x/term v0.5.0/go.mod h1:jMB1sMXY+tzblOD4FWmEbocvup2/aLOaQEp7JmGp78k=

@@ -13,12 +13,14 @@ type ViewModel struct {
 	Dirty      chan bool
 	logOrigins []string
 	checkpoint *log.Checkpoint
+	witnessed  *log.Checkpoint
 	leaf       Leaf
 	error      error
 }
 
-func (m *ViewModel) SetCheckpoint(cp *log.Checkpoint, err error) {
+func (m *ViewModel) SetCheckpoint(cp *log.Checkpoint, witnessedCP *log.Checkpoint, err error) {
 	m.checkpoint = cp
+	m.witnessed = witnessedCP
 	m.error = err
 	m.setDirty()
 }
