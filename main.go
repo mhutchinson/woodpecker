@@ -120,7 +120,8 @@ func (c *Controller) InitFromLog() {
 }
 
 func (c *Controller) RefreshCheckpoint() {
-	witnessed := make(chan *log.Checkpoint)
+	witnessed := make(chan *model.Checkpoint)
+	// Fetch the witnessed checkpoint in parallel
 	go func() {
 		logID := distclient.LogID(log.ID(c.current.GetOrigin()))
 		bs, err := c.Distributor.GetCheckpointN(logID, c.witnessSigs)
@@ -129,7 +130,10 @@ func (c *Controller) RefreshCheckpoint() {
 			return
 		}
 		cp, _, _, _ := log.ParseCheckpoint(bs, c.current.GetOrigin(), c.current.GetVerifier(), c.witVerifiers...)
-		witnessed <- cp
+		witnessed <- &model.Checkpoint{
+			Checkpoint: cp,
+			Raw:        bs,
+		}
 	}()
 	cp, err := c.current.GetCheckpoint()
 	wCP := <-witnessed
@@ -177,7 +181,7 @@ func newServerlessLogClient(lr string, origin string, vkey string) logClient {
 type logClient interface {
 	GetOrigin() string
 	GetVerifier() note.Verifier
-	GetCheckpoint() (*log.Checkpoint, error)
+	GetCheckpoint() (*model.Checkpoint, error)
 	GetLeaf(uint64) ([]byte, error)
 }
 
@@ -195,9 +199,12 @@ func (c *serverlessLogClient) GetVerifier() note.Verifier {
 	return c.verifier
 }
 
-func (c *serverlessLogClient) GetCheckpoint() (*log.Checkpoint, error) {
-	cp, _, _, err := client.FetchCheckpoint(context.Background(), c.fetcher, c.verifier, c.origin)
-	return cp, err
+func (c *serverlessLogClient) GetCheckpoint() (*model.Checkpoint, error) {
+	cp, raw, _, err := client.FetchCheckpoint(context.Background(), c.fetcher, c.verifier, c.origin)
+	return &model.Checkpoint{
+		Checkpoint: cp,
+		Raw:        raw,
+	}, err
 }
 
 func (c *serverlessLogClient) GetLeaf(index uint64) ([]byte, error) {

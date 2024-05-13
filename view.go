@@ -123,12 +123,12 @@ func (v View) Run(ctx context.Context) error {
 func (v View) refreshFromModel() {
 	cp := v.Model.GetCheckpoint()
 	if cp != nil {
-		text := string(cp.Marshal())
+		text := string(cp.Raw)
 		v.cpArea.SetText(text)
 	}
 	wit := v.Model.GetWitnessed()
 	if wit != nil {
-		text := string(wit.Marshal())
+		text := string(wit.Raw)
 		v.witArea.SetText(text)
 	}
 

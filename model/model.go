@@ -9,16 +9,21 @@ func NewViewModel(logOrigins []string) *ViewModel {
 	}
 }
 
+type Checkpoint struct {
+	*log.Checkpoint
+	Raw []byte
+}
+
 type ViewModel struct {
 	Dirty      chan bool
 	logOrigins []string
-	checkpoint *log.Checkpoint
-	witnessed  *log.Checkpoint
+	checkpoint *Checkpoint
+	witnessed  *Checkpoint
 	leaf       Leaf
 	error      error
 }
 
-func (m *ViewModel) SetCheckpoint(cp *log.Checkpoint, witnessedCP *log.Checkpoint, err error) {
+func (m *ViewModel) SetCheckpoint(cp *Checkpoint, witnessedCP *Checkpoint, err error) {
 	m.checkpoint = cp
 	m.witnessed = witnessedCP
 	m.error = err
@@ -42,11 +47,11 @@ func (m *ViewModel) GetLogOrigins() []string {
 	return m.logOrigins
 }
 
-func (m *ViewModel) GetCheckpoint() *log.Checkpoint {
+func (m *ViewModel) GetCheckpoint() *Checkpoint {
 	return m.checkpoint
 }
 
-func (m *ViewModel) GetWitnessed() *log.Checkpoint {
+func (m *ViewModel) GetWitnessed() *Checkpoint {
 	return m.witnessed
 }
 
