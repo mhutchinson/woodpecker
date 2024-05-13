@@ -33,7 +33,7 @@ type View struct {
 func NewView(cb Callbacks, m *model.ViewModel) View {
 	app := tview.NewApplication()
 	grid := tview.NewGrid()
-	grid.SetRows(8, 0, 3).SetColumns(0)
+	grid.SetRows(15, 0, 3).SetColumns(0)
 	cpArea := tview.NewTextView()
 	cpArea.SetBorder(true).SetTitle("Log Checkpoint")
 	witnessedArea := tview.NewTextView()
@@ -132,8 +132,7 @@ func (v View) refreshFromModel() {
 	}
 	wit := v.Model.GetWitnessed()
 	if wit != nil {
-		text := string(wit.Raw)
-		v.witArea.SetText(text)
+		v.witArea.SetText(fmt.Sprintf("Size: %d\nWitnesses: %d", wit.Size, len(wit.Note.Sigs)-1))
 	}
 
 	v.leafPage.SetTitle(fmt.Sprintf("Leaf %d", v.Model.GetLeaf().Index))

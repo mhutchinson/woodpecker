@@ -1,6 +1,9 @@
 package model
 
-import "github.com/transparency-dev/formats/log"
+import (
+	"github.com/transparency-dev/formats/log"
+	"golang.org/x/mod/sumdb/note"
+)
 
 func NewViewModel(logOrigins []string) *ViewModel {
 	return &ViewModel{
@@ -11,7 +14,8 @@ func NewViewModel(logOrigins []string) *ViewModel {
 
 type Checkpoint struct {
 	*log.Checkpoint
-	Raw []byte
+	Note *note.Note
+	Raw  []byte
 }
 
 type ViewModel struct {

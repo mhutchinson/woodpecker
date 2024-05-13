@@ -13,6 +13,7 @@ import (
 	"github.com/mhutchinson/woodpecker/model"
 	distclient "github.com/transparency-dev/distributor/client"
 	"github.com/transparency-dev/formats/log"
+	tnote "github.com/transparency-dev/formats/note"
 	"github.com/transparency-dev/serverless-log/client"
 	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
@@ -49,12 +50,7 @@ func main() {
 		logOrigins = append(logOrigins, c.GetOrigin())
 	}
 	model := model.NewViewModel(logOrigins)
-	controller := &Controller{
-		Model:       model,
-		LogClients:  logClients,
-		Distributor: *distclient.NewRestDistributor(distURL, http.DefaultClient),
-		witnessSigs: 2,
-	}
+	controller := NewController(model, logClients, *distclient.NewRestDistributor(distURL, http.DefaultClient))
 	controller.SelectLog(clients[0].GetOrigin())
 	go func() {
 		t := time.NewTicker(5 * time.Second)
@@ -80,7 +76,7 @@ func NewController(model *model.ViewModel, logClients map[string]logClient, dist
 	}
 	witVerifiers := make([]note.Verifier, 0, len(witKeys))
 	for _, k := range witKeys {
-		v, err := note.NewVerifier(k)
+		v, err := tnote.NewVerifierForCosignatureV1(k)
 		if err != nil {
 			panic(fmt.Sprintf("Invalid witness key: %v", err))
 		}
@@ -129,9 +125,10 @@ func (c *Controller) RefreshCheckpoint() {
 			witnessed <- nil
 			return
 		}
-		cp, _, _, _ := log.ParseCheckpoint(bs, c.current.GetOrigin(), c.current.GetVerifier(), c.witVerifiers...)
+		cp, _, n, _ := log.ParseCheckpoint(bs, c.current.GetOrigin(), c.current.GetVerifier(), c.witVerifiers...)
 		witnessed <- &model.Checkpoint{
 			Checkpoint: cp,
+			Note:       n,
 			Raw:        bs,
 		}
 	}()
@@ -200,10 +197,11 @@ func (c *serverlessLogClient) GetVerifier() note.Verifier {
 }
 
 func (c *serverlessLogClient) GetCheckpoint() (*model.Checkpoint, error) {
-	cp, raw, _, err := client.FetchCheckpoint(context.Background(), c.fetcher, c.verifier, c.origin)
+	cp, raw, n, err := client.FetchCheckpoint(context.Background(), c.fetcher, c.verifier, c.origin)
 	return &model.Checkpoint{
 		Checkpoint: cp,
 		Raw:        raw,
+		Note:       n,
 	}, err
 }
 
