@@ -31,6 +31,7 @@ type View struct {
 }
 
 func NewView(cb Callbacks, m *model.ViewModel) View {
+	app := tview.NewApplication()
 	grid := tview.NewGrid()
 	grid.SetRows(8, 0, 3).SetColumns(0)
 	cpArea := tview.NewTextView()
@@ -50,10 +51,14 @@ func NewView(cb Callbacks, m *model.ViewModel) View {
 	}
 	exitLogSelector := func() {
 		mainArea.SwitchToPage("leaf")
+		app.SetFocus(mainArea)
 	}
 	logsPage.AddItem("eXit", "eXplore the selected log", rune('x'), exitLogSelector)
 	logsPage.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch event.Key() {
+		case tcell.KeyEnter:
+			exitLogSelector()
+			return nil
 		case tcell.KeyEscape:
 			exitLogSelector()
 			return nil
@@ -64,7 +69,6 @@ func NewView(cb Callbacks, m *model.ViewModel) View {
 	mainArea.AddPage("leaf", leafPage, true, true)
 
 	errArea := tview.NewTextView()
-	app := tview.NewApplication()
 	app.SetRoot(grid, true)
 
 	cpFlex := tview.NewFlex()
