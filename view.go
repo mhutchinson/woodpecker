@@ -138,9 +138,15 @@ func (v View) refreshFromModel() {
 		text := string(cp.Raw)
 		v.cpArea.SetText(text)
 	}
+	v.witArea.SetTitle(fmt.Sprintf("Witnessed Checkpoint (N=%d)", v.Model.GetWitnessN()))
 	wit := v.Model.GetWitnessed()
 	if wit != nil {
-		v.witArea.SetText(fmt.Sprintf("Size: %d\nWitnesses: %d", wit.Size, len(wit.Note.Sigs)-1))
+		text := fmt.Sprintf("Size: %d | Hash: %x", wit.Size, wit.Hash)
+		wits := wit.Note.Sigs[1:]
+		for _, w := range wits {
+			text = fmt.Sprintf("%s\n%s", text, w.Name)
+		}
+		v.witArea.SetText(text)
 	}
 
 	v.leafPage.SetTitle(fmt.Sprintf("Leaf %d", v.Model.GetLeaf().Index))
@@ -151,5 +157,4 @@ func (v View) refreshFromModel() {
 	} else {
 		v.errArea.SetText("")
 	}
-	v.witArea.SetTitle(fmt.Sprintf("Witnessed Checkpoint (N=%d)", v.Model.GetWitnessN()))
 }

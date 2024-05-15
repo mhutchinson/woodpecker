@@ -165,6 +165,9 @@ func (c *Controller) IncWitnesses() {
 }
 
 func (c *Controller) DecWitnesses() {
+	if c.Model.GetWitnessN() <= 1 {
+		return
+	}
 	c.Model.SetWitnessN(c.Model.GetWitnessN() - 1)
 	c.RefreshCheckpoint()
 }
