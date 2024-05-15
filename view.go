@@ -15,6 +15,8 @@ type Callbacks interface {
 	PrevLeaf()
 	NextLeaf()
 	SelectLog(o string)
+	IncWitnesses()
+	DecWitnesses()
 }
 
 type View struct {
@@ -107,6 +109,12 @@ func (v View) Run(ctx context.Context) error {
 			v.mainArea.SwitchToPage("logs")
 			v.app.SetFocus(v.logsPage)
 			return nil
+		case 'W':
+			v.Callbacks.DecWitnesses()
+			return nil
+		case 'w':
+			v.Callbacks.IncWitnesses()
+			return nil
 		}
 		return event
 	})
@@ -143,4 +151,5 @@ func (v View) refreshFromModel() {
 	} else {
 		v.errArea.SetText("")
 	}
+	v.witArea.SetTitle(fmt.Sprintf("Witnessed Checkpoint (N=%d)", v.Model.GetWitnessN()))
 }

@@ -87,7 +87,6 @@ func NewController(model *model.ViewModel, logClients map[string]logClient, dist
 		LogClients:   logClients,
 		Distributor:  distributor,
 		witVerifiers: witVerifiers,
-		witnessSigs:  2,
 	}
 }
 
@@ -97,8 +96,7 @@ type Controller struct {
 	Distributor  distclient.RestDistributor
 	witVerifiers []note.Verifier
 
-	current     logClient
-	witnessSigs uint
+	current logClient
 }
 
 func (c *Controller) SelectLog(o string) {
@@ -120,7 +118,7 @@ func (c *Controller) RefreshCheckpoint() {
 	// Fetch the witnessed checkpoint in parallel
 	go func() {
 		logID := distclient.LogID(log.ID(c.current.GetOrigin()))
-		bs, err := c.Distributor.GetCheckpointN(logID, c.witnessSigs)
+		bs, err := c.Distributor.GetCheckpointN(logID, c.Model.GetWitnessN())
 		if err != nil {
 			witnessed <- nil
 			return
@@ -156,6 +154,16 @@ func (c *Controller) PrevLeaf() {
 
 func (c *Controller) NextLeaf() {
 	c.GetLeaf(c.Model.GetLeaf().Index + 1)
+}
+
+func (c *Controller) IncWitnesses() {
+	c.Model.SetWitnessN(c.Model.GetWitnessN() + 1)
+	c.RefreshCheckpoint()
+}
+
+func (c *Controller) DecWitnesses() {
+	c.Model.SetWitnessN(c.Model.GetWitnessN() - 1)
+	c.RefreshCheckpoint()
 }
 
 func newServerlessLogClient(lr string, origin string, vkey string) logClient {

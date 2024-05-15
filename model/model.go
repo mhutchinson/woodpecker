@@ -9,6 +9,7 @@ func NewViewModel(logOrigins []string) *ViewModel {
 	return &ViewModel{
 		Dirty:      make(chan bool, 1),
 		logOrigins: logOrigins,
+		witnessN:   2,
 	}
 }
 
@@ -23,6 +24,7 @@ type ViewModel struct {
 	logOrigins []string
 	checkpoint *Checkpoint
 	witnessed  *Checkpoint
+	witnessN   uint
 	leaf       Leaf
 	error      error
 }
@@ -65,6 +67,15 @@ func (m *ViewModel) GetLeaf() Leaf {
 
 func (m *ViewModel) GetError() error {
 	return m.error
+}
+
+func (m *ViewModel) GetWitnessN() uint {
+	return m.witnessN
+}
+
+func (m *ViewModel) SetWitnessN(n uint) {
+	m.witnessN = n
+	m.setDirty()
 }
 
 type Leaf struct {
