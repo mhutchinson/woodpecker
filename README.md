@@ -17,8 +17,8 @@ Features:
 ## Roadmap (flight plan?)
 
  - [x] Support log switcher to other serverless logs
+ - [x] Support getting witnessed checkpoints from distributor
  - [ ] Support logs other than serverless
- - [ ] Support generating an offline inclusion proof bundle for the selected leaf
- - [ ] Support getting witnessed checkpoints from distributor, and include this in offline inclusion proofs
+ - [ ] Support generating an offline inclusion proof bundle for the selected leaf including witness sigs
  - [ ] Custom leaf renderer (needed if leaf data is not text-friendly)
 
