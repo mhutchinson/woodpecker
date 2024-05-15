@@ -12,6 +12,7 @@ Features:
  - `<Ctrl-c>` to quit
  - Left/Right arrows: previous/next leaf
 - `l`: show the log selector to switch to a different log
+- `g`: jump to a specific leaf
 - `w`/`W`: increment/decrement the number of witness signatures to query
 
 ## Roadmap (flight plan?)

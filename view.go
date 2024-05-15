@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/mhutchinson/woodpecker/model"
@@ -23,19 +24,21 @@ type View struct {
 	Model     *model.ViewModel
 	Callbacks Callbacks
 
-	app      *tview.Application
-	cpArea   *tview.TextView
-	witArea  *tview.TextView
-	mainArea *tview.Pages
-	leafPage *tview.TextView
-	logsPage *tview.List
-	errArea  *tview.TextView
+	app        *tview.Application
+	cpArea     *tview.TextView
+	witArea    *tview.TextView
+	mainArea   *tview.Pages
+	leafPage   *tview.TextView
+	logsPage   *tview.List
+	errPage    *tview.TextView
+	jumpPage   *tview.InputField
+	bottomArea *tview.Pages
 }
 
 func NewView(cb Callbacks, m *model.ViewModel) View {
 	app := tview.NewApplication()
 	grid := tview.NewGrid()
-	grid.SetRows(15, 0, 3).SetColumns(0)
+	grid.SetRows(15, 0, 5).SetColumns(0)
 	cpArea := tview.NewTextView()
 	cpArea.SetBorder(true).SetTitle("Log Checkpoint")
 	witnessedArea := tview.NewTextView()
@@ -70,7 +73,21 @@ func NewView(cb Callbacks, m *model.ViewModel) View {
 	mainArea.AddPage("logs", logsPage, true, true)
 	mainArea.AddPage("leaf", leafPage, true, true)
 
-	errArea := tview.NewTextView()
+	bottomArea := tview.NewPages()
+	errPage := tview.NewTextView()
+	jumpPage := tview.NewInputField()
+	jumpPage.SetLabel("Jump to index").SetFieldWidth(10).SetAcceptanceFunc(tview.InputFieldInteger).SetDoneFunc(func(key tcell.Key) {
+		t := jumpPage.GetText()
+		i, err := strconv.Atoi(t)
+		if err != nil {
+			return
+		}
+		cb.GetLeaf(uint64(i))
+		bottomArea.SwitchToPage("errors")
+		app.SetFocus(mainArea)
+	})
+	bottomArea.AddPage("jump", jumpPage, true, true)
+	bottomArea.AddPage("errors", errPage, true, true)
 	app.SetRoot(grid, true)
 
 	cpFlex := tview.NewFlex()
@@ -78,18 +95,20 @@ func NewView(cb Callbacks, m *model.ViewModel) View {
 	cpFlex.AddItem(witnessedArea, 0, 1, false)
 	grid.AddItem(cpFlex, 0, 0, 1, 1, 0, 0, false)
 	grid.AddItem(mainArea, 1, 0, 1, 1, 0, 0, false)
-	grid.AddItem(errArea, 2, 0, 1, 1, 0, 0, false)
+	grid.AddItem(bottomArea, 2, 0, 1, 1, 0, 0, false)
 
 	v := View{
-		Model:     m,
-		Callbacks: cb,
-		app:       app,
-		cpArea:    cpArea,
-		witArea:   witnessedArea,
-		mainArea:  mainArea,
-		leafPage:  leafPage,
-		logsPage:  logsPage,
-		errArea:   errArea,
+		Model:      m,
+		Callbacks:  cb,
+		app:        app,
+		cpArea:     cpArea,
+		witArea:    witnessedArea,
+		mainArea:   mainArea,
+		leafPage:   leafPage,
+		logsPage:   logsPage,
+		bottomArea: bottomArea,
+		errPage:    errPage,
+		jumpPage:   jumpPage,
 	}
 	return v
 }
@@ -114,6 +133,10 @@ func (v View) Run(ctx context.Context) error {
 			return nil
 		case 'w':
 			v.Callbacks.IncWitnesses()
+			return nil
+		case 'g':
+			v.bottomArea.SwitchToPage("jump")
+			v.app.SetFocus(v.jumpPage)
 			return nil
 		}
 		return event
@@ -153,8 +176,8 @@ func (v View) refreshFromModel() {
 	v.leafPage.SetText(string(v.Model.GetLeaf().Contents))
 
 	if v.Model.GetError() != nil {
-		v.errArea.SetText(fmt.Sprintf("Error: %v", v.Model.GetError()))
+		v.errPage.SetText(fmt.Sprintf("Error: %v", v.Model.GetError()))
 	} else {
-		v.errArea.SetText("")
+		v.errPage.SetText("")
 	}
 }
