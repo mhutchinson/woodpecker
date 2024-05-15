@@ -35,6 +35,9 @@ var (
 		newServerlessLogClient("https://fwupd.org/ftlog/lvfs/",
 			"lvfs",
 			"lvfs+7908d142+ASnlGgOh+634tcE/2Lp3wV7k/cLoU6ncawmb/BLC1oMU"),
+		newSumDBLogClient("https://sum.golang.org/",
+			"go.sum database tree",
+			"sum.golang.org+033de0ae+Ac4zctda0e5eza+HJyk9SxEdh+s3Ux18htTTAD8OuAn8"),
 	}
 )
 
@@ -166,6 +169,13 @@ func (c *Controller) DecWitnesses() {
 	c.RefreshCheckpoint()
 }
 
+type logClient interface {
+	GetOrigin() string
+	GetVerifier() note.Verifier
+	GetCheckpoint() (*model.Checkpoint, error)
+	GetLeaf(uint64) ([]byte, error)
+}
+
 func newServerlessLogClient(lr string, origin string, vkey string) logClient {
 	logRoot, err := url.Parse(lr)
 	if err != nil {
@@ -181,13 +191,6 @@ func newServerlessLogClient(lr string, origin string, vkey string) logClient {
 		verifier: verifier,
 		fetcher:  fetcher,
 	}
-}
-
-type logClient interface {
-	GetOrigin() string
-	GetVerifier() note.Verifier
-	GetCheckpoint() (*model.Checkpoint, error)
-	GetLeaf(uint64) ([]byte, error)
 }
 
 type serverlessLogClient struct {
@@ -216,6 +219,85 @@ func (c *serverlessLogClient) GetCheckpoint() (*model.Checkpoint, error) {
 func (c *serverlessLogClient) GetLeaf(index uint64) ([]byte, error) {
 	leaf, err := client.GetLeaf(context.Background(), c.fetcher, index)
 	return leaf, err
+}
+
+func newSumDBLogClient(lr string, origin string, vkey string) logClient {
+	logRoot, err := url.Parse(lr)
+	if err != nil {
+		klog.Exit(err)
+	}
+	fetcher := newFetcher(logRoot)
+	verifier, err := note.NewVerifier(vkey)
+	if err != nil {
+		klog.Exit(err)
+	}
+	return &sumDBLogClient{
+		origin:   origin,
+		verifier: verifier,
+		fetcher:  fetcher,
+	}
+}
+
+type sumDBLogClient struct {
+	origin   string
+	verifier note.Verifier
+	fetcher  client.Fetcher
+}
+
+func (c *sumDBLogClient) GetOrigin() string {
+	return c.origin
+}
+
+func (c *sumDBLogClient) GetVerifier() note.Verifier {
+	return c.verifier
+}
+
+func (c *sumDBLogClient) GetCheckpoint() (*model.Checkpoint, error) {
+	cpRaw, err := c.fetcher(context.Background(), "/latest")
+	if err != nil {
+		return nil, err
+	}
+
+	cp, _, n, err := log.ParseCheckpoint(cpRaw, c.origin, c.verifier)
+	return &model.Checkpoint{
+		Checkpoint: cp,
+		Raw:        cpRaw,
+		Note:       n,
+	}, err
+}
+
+func (c *sumDBLogClient) GetLeaf(index uint64) ([]byte, error) {
+	const pathBase = 1000
+	offset := index / 256
+	nStr := fmt.Sprintf("%03d", offset%pathBase)
+	for offset >= pathBase {
+		offset /= pathBase
+		nStr = fmt.Sprintf("x%03d/%s", offset%pathBase, nStr)
+	}
+	path := fmt.Sprintf("/tile/8/data/%s", nStr)
+	if rem := index % 256; rem != 255 {
+		path = fmt.Sprintf("%s.p/%d", path, rem+1)
+	}
+	data, err := c.fetcher(context.Background(), path)
+	if err != nil {
+		return nil, err
+	}
+	dataToLeaves := func(data []byte) [][]byte {
+		result := make([][]byte, 0)
+		start := 0
+		for i, b := range data {
+			if b == '\n' {
+				if i > start && data[i-1] == '\n' {
+					result = append(result, data[start:i])
+					start = i + 1
+				}
+			}
+		}
+		result = append(result, data[start:])
+		return result
+	}
+	leaves := dataToLeaves(data)
+	return leaves[index%256], nil
 }
 
 // newFetcher creates a Fetcher for the log at the given root location.
