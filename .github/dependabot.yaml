@@ -1,0 +1,25 @@
+version: 2
+updates:
+- package-ecosystem: gomod
+  directory: /
+  groups:
+    all-go-deps:
+      patterns:
+        - "*"
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 10
+  commit-message:
+    prefix: ":seedling:"
+    include: "scope"
+- package-ecosystem: "github-actions"
+  directory: "/"
+  groups:
+    all-gha-deps:
+      patterns:
+        - "*"
+  schedule:
+    interval: "weekly"
+  commit-message:
+    prefix: ":seedling:"
+    include: "scope"
