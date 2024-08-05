@@ -8,7 +8,7 @@ require (
 	github.com/transparency-dev/distributor v0.1.2
 	github.com/transparency-dev/formats v0.0.0-20240510093228-0ddf4ed18178
 	github.com/transparency-dev/serverless-log v0.0.0-20240507164215-bf5370b31f94
-	golang.org/x/mod v0.19.0
+	golang.org/x/mod v0.20.0
 	k8s.io/klog/v2 v2.130.1
 )
 
