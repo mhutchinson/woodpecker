@@ -12,7 +12,7 @@ import (
 
 type Callbacks interface {
 	RefreshCheckpoint()
-	GetLeaf(uint64)
+	GetLeaf(size, index uint64)
 	PrevLeaf()
 	NextLeaf()
 	SelectLog(o string)
@@ -82,7 +82,7 @@ func NewView(cb Callbacks, m *model.ViewModel) View {
 		if err != nil {
 			return
 		}
-		cb.GetLeaf(uint64(i))
+		cb.GetLeaf(m.GetCheckpoint().Size, uint64(i))
 		bottomArea.SwitchToPage("errors")
 		app.SetFocus(mainArea)
 	})
