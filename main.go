@@ -14,7 +14,8 @@ import (
 	distclient "github.com/transparency-dev/distributor/client"
 	"github.com/transparency-dev/formats/log"
 	tnote "github.com/transparency-dev/formats/note"
-	"github.com/transparency-dev/serverless-log/client"
+	serverless_client "github.com/transparency-dev/serverless-log/client"
+	tiles_client "github.com/transparency-dev/trillian-tessera/client"
 	"golang.org/x/mod/sumdb/note"
 	"k8s.io/klog/v2"
 )
@@ -41,11 +42,30 @@ var (
 	}
 )
 
+var (
+	customLogUrl    = flag.String("custom_log_url", "", "The base URL of a custom log to register")
+	customLogOrigin = flag.String("custom_log_origin", "", "The origin of a custom log to register")
+	customLogVKey   = flag.String("custom_log_vkey", "", "The verifier key of a custom log to register")
+	customLogType   = flag.String("custom_log_type", "", "The type of the custom log specified by the other custom_* flags. Must be empty, or one of {tiles, serverless}.")
+)
+
 func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
 	ctx := context.Background()
 
+	switch *customLogType {
+	case "":
+		break
+	case "tiles":
+		c := newTLogTilesLogClient(*customLogUrl, *customLogOrigin, *customLogVKey)
+		clients = append([]logClient{c}, clients...)
+	case "serverless":
+		c := newServerlessLogClient(*customLogUrl, *customLogOrigin, *customLogVKey)
+		clients = append([]logClient{c}, clients...)
+	default:
+		klog.Exitf("custom_log_type %s not recognised", *customLogType)
+	}
 	logClients := make(map[string]logClient, len(clients))
 	logOrigins := make([]string, 0, len(clients))
 	for _, c := range clients {
@@ -112,7 +132,8 @@ func (c *Controller) SelectLog(o string) {
 func (c *Controller) InitFromLog() {
 	c.RefreshCheckpoint()
 	if c.Model.GetCheckpoint() != nil && c.Model.GetCheckpoint().Size > 0 {
-		c.GetLeaf(c.Model.GetCheckpoint().Size - 1)
+		size := c.Model.GetCheckpoint().Size
+		c.GetLeaf(size, size-1)
 	}
 }
 
@@ -138,13 +159,12 @@ func (c *Controller) RefreshCheckpoint() {
 	c.Model.SetCheckpoint(cp, wCP, err)
 }
 
-func (c *Controller) GetLeaf(index uint64) {
-	size := c.Model.GetCheckpoint().Size
+func (c *Controller) GetLeaf(size, index uint64) {
 	if index >= size {
 		c.Model.SetLeaf(c.Model.GetLeaf(), fmt.Errorf("Cannot fetch leaf bigger than checkpoint size %d", size))
 		return
 	}
-	leaf, err := c.current.GetLeaf(index)
+	leaf, err := c.current.GetLeaf(size, index)
 	c.Model.SetLeaf(model.Leaf{
 		Contents: leaf,
 		Index:    index,
@@ -152,11 +172,13 @@ func (c *Controller) GetLeaf(index uint64) {
 }
 
 func (c *Controller) PrevLeaf() {
-	c.GetLeaf(c.Model.GetLeaf().Index - 1)
+	size := c.Model.GetCheckpoint().Size
+	c.GetLeaf(size, c.Model.GetLeaf().Index-1)
 }
 
 func (c *Controller) NextLeaf() {
-	c.GetLeaf(c.Model.GetLeaf().Index + 1)
+	size := c.Model.GetCheckpoint().Size
+	c.GetLeaf(size, c.Model.GetLeaf().Index+1)
 }
 
 func (c *Controller) IncWitnesses() {
@@ -176,7 +198,60 @@ type logClient interface {
 	GetOrigin() string
 	GetVerifier() note.Verifier
 	GetCheckpoint() (*model.Checkpoint, error)
-	GetLeaf(uint64) ([]byte, error)
+	GetLeaf(size, index uint64) ([]byte, error)
+}
+
+func newTLogTilesLogClient(lr string, origin string, vkey string) logClient {
+	logRoot, err := url.Parse(lr)
+	if err != nil {
+		klog.Exit(err)
+	}
+	fetcher := newFetcher(logRoot)
+	verifier, err := note.NewVerifier(vkey)
+	if err != nil {
+		klog.Exit(err)
+	}
+	return &tLogTilesLogClient{
+		origin:   origin,
+		verifier: verifier,
+		fetcher: func(ctx context.Context, path string) ([]byte, error) {
+			return fetcher(ctx, path)
+		},
+	}
+}
+
+type tLogTilesLogClient struct {
+	origin   string
+	verifier note.Verifier
+	fetcher  tiles_client.Fetcher
+}
+
+func (c *tLogTilesLogClient) GetOrigin() string {
+	return c.origin
+}
+
+func (c *tLogTilesLogClient) GetVerifier() note.Verifier {
+	return c.verifier
+}
+
+func (c *tLogTilesLogClient) GetCheckpoint() (*model.Checkpoint, error) {
+	cp, raw, n, err := tiles_client.FetchCheckpoint(context.Background(), c.fetcher, c.verifier, c.origin)
+	return &model.Checkpoint{
+		Checkpoint: cp,
+		Raw:        raw,
+		Note:       n,
+	}, err
+}
+
+func (c *tLogTilesLogClient) GetLeaf(size, index uint64) ([]byte, error) {
+	bundleIndex := index / 256
+	leafOffset := index % 256
+	// TODO(mhutchinson): cache the bundle so consecutive leaf fetching is efficient
+	bundle, err := tiles_client.GetEntryBundle(context.Background(), c.fetcher, bundleIndex, size)
+	if err != nil {
+		return nil, err
+	}
+	return bundle.Entries[leafOffset], nil
 }
 
 func newServerlessLogClient(lr string, origin string, vkey string) logClient {
@@ -199,7 +274,7 @@ func newServerlessLogClient(lr string, origin string, vkey string) logClient {
 type serverlessLogClient struct {
 	origin   string
 	verifier note.Verifier
-	fetcher  client.Fetcher
+	fetcher  serverless_client.Fetcher
 }
 
 func (c *serverlessLogClient) GetOrigin() string {
@@ -211,7 +286,7 @@ func (c *serverlessLogClient) GetVerifier() note.Verifier {
 }
 
 func (c *serverlessLogClient) GetCheckpoint() (*model.Checkpoint, error) {
-	cp, raw, n, err := client.FetchCheckpoint(context.Background(), c.fetcher, c.verifier, c.origin)
+	cp, raw, n, err := serverless_client.FetchCheckpoint(context.Background(), c.fetcher, c.verifier, c.origin)
 	return &model.Checkpoint{
 		Checkpoint: cp,
 		Raw:        raw,
@@ -219,8 +294,8 @@ func (c *serverlessLogClient) GetCheckpoint() (*model.Checkpoint, error) {
 	}, err
 }
 
-func (c *serverlessLogClient) GetLeaf(index uint64) ([]byte, error) {
-	leaf, err := client.GetLeaf(context.Background(), c.fetcher, index)
+func (c *serverlessLogClient) GetLeaf(size, index uint64) ([]byte, error) {
+	leaf, err := serverless_client.GetLeaf(context.Background(), c.fetcher, index)
 	return leaf, err
 }
 
@@ -244,7 +319,7 @@ func newSumDBLogClient(lr string, origin string, vkey string) logClient {
 type sumDBLogClient struct {
 	origin   string
 	verifier note.Verifier
-	fetcher  client.Fetcher
+	fetcher  serverless_client.Fetcher
 }
 
 func (c *sumDBLogClient) GetOrigin() string {
@@ -269,7 +344,7 @@ func (c *sumDBLogClient) GetCheckpoint() (*model.Checkpoint, error) {
 	}, err
 }
 
-func (c *sumDBLogClient) GetLeaf(index uint64) ([]byte, error) {
+func (c *sumDBLogClient) GetLeaf(size, index uint64) ([]byte, error) {
 	const pathBase = 1000
 	offset := index / 256
 	nStr := fmt.Sprintf("%03d", offset%pathBase)
@@ -304,7 +379,7 @@ func (c *sumDBLogClient) GetLeaf(index uint64) ([]byte, error) {
 }
 
 // newFetcher creates a Fetcher for the log at the given root location.
-func newFetcher(root *url.URL) client.Fetcher {
+func newFetcher(root *url.URL) serverless_client.Fetcher {
 	get := getByScheme[root.Scheme]
 	if get == nil {
 		panic(fmt.Errorf("unsupported URL scheme %s", root.Scheme))
