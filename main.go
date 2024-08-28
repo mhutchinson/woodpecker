@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/mhutchinson/woodpecker/model"
@@ -202,6 +203,9 @@ type logClient interface {
 }
 
 func newTLogTilesLogClient(lr string, origin string, vkey string) logClient {
+	if !strings.HasSuffix(lr, "/") {
+		lr = lr + "/"
+	}
 	logRoot, err := url.Parse(lr)
 	if err != nil {
 		klog.Exit(err)
@@ -255,6 +259,9 @@ func (c *tLogTilesLogClient) GetLeaf(size, index uint64) ([]byte, error) {
 }
 
 func newServerlessLogClient(lr string, origin string, vkey string) logClient {
+	if !strings.HasSuffix(lr, "/") {
+		lr = lr + "/"
+	}
 	logRoot, err := url.Parse(lr)
 	if err != nil {
 		klog.Exit(err)
