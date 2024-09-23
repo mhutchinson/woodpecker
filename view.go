@@ -138,6 +138,8 @@ func (v View) Run(ctx context.Context) error {
 			v.bottomArea.SwitchToPage("jump")
 			v.app.SetFocus(v.jumpPage)
 			return nil
+		case 'q':
+			v.app.Stop()
 		}
 		return event
 	})

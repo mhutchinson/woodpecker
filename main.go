@@ -215,6 +215,10 @@ func newTLogTilesLogClient(lr string, origin string, vkey string) logClient {
 	if err != nil {
 		klog.Exit(err)
 	}
+	if len(origin) == 0 {
+		origin = verifier.Name()
+		klog.Infof("No origin provided; using verifier name: %q", origin)
+	}
 	return &tLogTilesLogClient{
 		origin:   origin,
 		verifier: verifier,

@@ -9,7 +9,7 @@ go run .
 ```
 
 Features:
- - `<Ctrl-c>` to quit
+ - `q` or `<Ctrl-c>` to quit
  - Left/Right arrows: previous/next leaf
 - `l`: show the log selector to switch to a different log
 - `g`: jump to a specific leaf
