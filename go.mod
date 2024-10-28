@@ -1,6 +1,7 @@
 module github.com/mhutchinson/woodpecker
 
-go 1.22.6
+go 1.22.7
+
 toolchain go1.22.8
 
 require (
