@@ -131,8 +131,11 @@ func (c *Controller) SelectLog(o string) {
 
 func (c *Controller) InitFromLog() {
 	c.RefreshCheckpoint()
-	if c.Model.GetCheckpoint() != nil && c.Model.GetCheckpoint().Size > 0 {
-		size := c.Model.GetCheckpoint().Size
+	if err := c.Model.GetError(); err != nil {
+		klog.Exit(err)
+	}
+	if cp := c.Model.GetCheckpoint(); cp != nil && cp.Size > 0 {
+		size := cp.Size
 		c.GetLeaf(size, size-1)
 	}
 }
