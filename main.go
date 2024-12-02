@@ -207,12 +207,12 @@ func newTLogTilesLogClient(lr string, origin string, vkey string) logClient {
 	}
 	logRoot, err := url.Parse(lr)
 	if err != nil {
-		klog.Exit(err)
+		klog.Exitf("Failed to create URL from %q: %v", lr, err)
 	}
 	fetcher := newFetcher(logRoot)
 	verifier, err := note.NewVerifier(vkey)
 	if err != nil {
-		klog.Exit(err)
+		klog.Exitf("Failed to create verifier from %q: %v", vkey, err)
 	}
 	if len(origin) == 0 {
 		origin = verifier.Name()
