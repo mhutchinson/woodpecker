@@ -164,7 +164,7 @@ func (c *Controller) RefreshCheckpoint() {
 
 func (c *Controller) GetLeaf(size, index uint64) {
 	if index >= size {
-		c.Model.SetLeaf(c.Model.GetLeaf(), fmt.Errorf("Cannot fetch leaf bigger than checkpoint size %d", size))
+		c.Model.SetLeaf(c.Model.GetLeaf(), fmt.Errorf("cannot fetch leaf bigger than checkpoint size %d", size))
 		return
 	}
 	leaf, err := c.current.GetLeaf(size, index)
