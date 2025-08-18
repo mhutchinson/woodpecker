@@ -1,8 +1,6 @@
 module github.com/mhutchinson/woodpecker
 
-go 1.22.7
-
-toolchain go1.22.8
+go 1.24.0
 
 require (
 	github.com/gdamore/tcell/v2 v2.8.1
@@ -11,7 +9,7 @@ require (
 	github.com/transparency-dev/formats v0.0.0-20241003145927-a04dcc2a37e4
 	github.com/transparency-dev/serverless-log v0.0.0-20240507164215-bf5370b31f94
 	github.com/transparency-dev/trillian-tessera v0.0.0-20240827143803-0cfc4330d4f8
-	golang.org/x/mod v0.22.0
+	golang.org/x/mod v0.27.0
 	k8s.io/klog/v2 v2.130.1
 )
 
