@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/gdamore/tcell/v2 v2.9.0
-	github.com/rivo/tview v0.0.0-20240625185742-b0a7293b8130
+	github.com/rivo/tview v0.42.0
 	github.com/transparency-dev/distributor v0.3.0
 	github.com/transparency-dev/formats v0.0.0-20241003145927-a04dcc2a37e4
 	github.com/transparency-dev/serverless-log v0.0.0-20240507164215-bf5370b31f94
