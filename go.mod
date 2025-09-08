@@ -1,6 +1,6 @@
 module github.com/mhutchinson/woodpecker
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/gdamore/tcell/v2 v2.9.0
