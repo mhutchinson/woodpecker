@@ -40,6 +40,9 @@ var (
 		newSumDBLogClient("https://sum.golang.org/",
 			"go.sum database tree",
 			"sum.golang.org+033de0ae+Ac4zctda0e5eza+HJyk9SxEdh+s3Ux18htTTAD8OuAn8"),
+		newTLogTilesLogClient("https://log2025-1.rekor.sigstore.dev/api/v2/",
+		    "log2025-1.rekor.sigstore.dev",
+			"log2025-1.rekor.sigstore.dev+cf119915+AbfK5adZJxsI323FwGD2AJJ9F4i89cfDuLdGJBIYntuO"),
 	}
 )
 
