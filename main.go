@@ -41,12 +41,13 @@ var (
 			"go.sum database tree",
 			"sum.golang.org+033de0ae+Ac4zctda0e5eza+HJyk9SxEdh+s3Ux18htTTAD8OuAn8"),
 		newTLogTilesLogClient("https://log2025-1.rekor.sigstore.dev/api/v2/",
-		    "log2025-1.rekor.sigstore.dev",
+			"log2025-1.rekor.sigstore.dev",
 			"log2025-1.rekor.sigstore.dev+cf119915+AbfK5adZJxsI323FwGD2AJJ9F4i89cfDuLdGJBIYntuO"),
 	}
 )
 
 var (
+	origin          = flag.String("origin", "", "The origin of a built-in log to open by default")
 	customLogUrl    = flag.String("custom_log_url", "", "The base URL of a custom log to register")
 	customLogOrigin = flag.String("custom_log_origin", "", "The origin of a custom log to register")
 	customLogVKey   = flag.String("custom_log_vkey", "", "The verifier key of a custom log to register")
@@ -77,7 +78,17 @@ func main() {
 	}
 	model := model.NewViewModel(logOrigins)
 	controller := NewController(model, logClients, *distclient.NewRestDistributor(distURL, http.DefaultClient))
-	controller.SelectLog(clients[0].GetOrigin())
+
+	logIdx := 0
+	if len(*origin) > 0 {
+		for i, c := range clients {
+			if *origin == c.GetOrigin() {
+				logIdx = i
+				break
+			}
+		}
+	}
+	controller.SelectLog(clients[logIdx].GetOrigin())
 	go func() {
 		t := time.NewTicker(5 * time.Second)
 		for {

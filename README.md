@@ -5,7 +5,20 @@ Woodpecker is a command-line tool that launches a UI to inspect logs.
 To run it:
 
 ```bash
+# From a local checkout
 go run .
+```
+
+```bash
+# Without a local checkout:
+go run github.com/mhutchinson/woodpecker@main
+```
+
+To change the default log that is displayed, the `--origin` flag can be provided:
+
+```bash
+# This will show the contents of the Go SumDB by default:
+go run github.com/mhutchinson/woodpecker@main --origin "go.sum database tree"
 ```
 
 Features:
