@@ -35,4 +35,5 @@ Features:
  - [x] Support logs other than serverless
  - [ ] Support generating an offline inclusion proof bundle for the selected leaf including witness sigs
  - [ ] Custom leaf renderer (needed if leaf data is not text-friendly)
+   - This feature is in progress!
 

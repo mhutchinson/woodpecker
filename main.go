@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -27,22 +29,32 @@ var (
 	clients = []logClient{
 		newServerlessLogClient("https://api.transparency.dev/armored-witness-firmware/prod/log/1/",
 			"transparency.dev/armored-witness/firmware_transparency/prod/1",
-			"transparency.dev-aw-ftlog-prod-1+3e6d87ee+Aa3qdhefd2cc/98jV3blslJT2L+iFR8WKHeGcgFmyjnt"),
+			"transparency.dev-aw-ftlog-prod-1+3e6d87ee+Aa3qdhefd2cc/98jV3blslJT2L+iFR8WKHeGcgFmyjnt",
+			directRender),
 		newServerlessLogClient("https://api.transparency.dev/armored-witness-firmware/ci/log/4/",
 			"transparency.dev/armored-witness/firmware_transparency/ci/4",
-			"transparency.dev-aw-ftlog-ci-4+30fe79e3+AUDoas+smwQDTlYbTzbEcAW+N6WyvB/4CysMWjpnRgat"),
+			"transparency.dev-aw-ftlog-ci-4+30fe79e3+AUDoas+smwQDTlYbTzbEcAW+N6WyvB/4CysMWjpnRgat",
+			directRender),
 		newServerlessLogClient("https://raw.githubusercontent.com/f-secure-foundry/armory-drive-log/master/log/",
 			"Armory Drive Prod 2",
-			"armory-drive-log+16541b8f+AYDPmG5pQp4Bgu0a1mr5uDZ196+t8lIVIfWQSPWmP+Jv"),
-		newServerlessLogClient("https://fwupd.org/ftlog/lvfs/",
-			"lvfs",
-			"lvfs+7908d142+ASnlGgOh+634tcE/2Lp3wV7k/cLoU6ncawmb/BLC1oMU"),
+			"armory-drive-log+16541b8f+AYDPmG5pQp4Bgu0a1mr5uDZ196+t8lIVIfWQSPWmP+Jv",
+			directRender),
 		newSumDBLogClient("https://sum.golang.org/",
 			"go.sum database tree",
 			"sum.golang.org+033de0ae+Ac4zctda0e5eza+HJyk9SxEdh+s3Ux18htTTAD8OuAn8"),
 		newTLogTilesLogClient("https://log2025-1.rekor.sigstore.dev/api/v2/",
 			"log2025-1.rekor.sigstore.dev",
-			"log2025-1.rekor.sigstore.dev+cf119915+AbfK5adZJxsI323FwGD2AJJ9F4i89cfDuLdGJBIYntuO"),
+			"log2025-1.rekor.sigstore.dev+cf119915+AbfK5adZJxsI323FwGD2AJJ9F4i89cfDuLdGJBIYntuO",
+			func(raw []byte) string {
+				var prettyJSON bytes.Buffer
+
+				err := json.Indent(&prettyJSON, raw, "", "  ") // Use "  " for two-space indentation
+				if err != nil {
+					klog.Warningf("failed to render leaf: %v", err)
+					return directRender(raw)
+				}
+				return prettyJSON.String()
+			}),
 	}
 )
 
@@ -62,10 +74,10 @@ func main() {
 	case "":
 		break
 	case "tiles":
-		c := newTLogTilesLogClient(*customLogUrl, *customLogOrigin, *customLogVKey)
+		c := newTLogTilesLogClient(*customLogUrl, *customLogOrigin, *customLogVKey, directRender)
 		clients = append([]logClient{c}, clients...)
 	case "serverless":
-		c := newServerlessLogClient(*customLogUrl, *customLogOrigin, *customLogVKey)
+		c := newServerlessLogClient(*customLogUrl, *customLogOrigin, *customLogVKey, directRender)
 		clients = append([]logClient{c}, clients...)
 	default:
 		klog.Exitf("custom_log_type %s not recognised", *customLogType)
@@ -183,7 +195,7 @@ func (c *Controller) GetLeaf(size, index uint64) {
 	}
 	leaf, err := c.current.GetLeaf(size, index)
 	c.Model.SetLeaf(model.Leaf{
-		Contents: leaf,
+		Contents: leaf.rendered,
 		Index:    index,
 	}, err)
 }
@@ -215,10 +227,15 @@ type logClient interface {
 	GetOrigin() string
 	GetVerifier() note.Verifier
 	GetCheckpoint() (*model.Checkpoint, error)
-	GetLeaf(size, index uint64) ([]byte, error)
+	GetLeaf(size, index uint64) (renderedLeaf, error)
 }
 
-func newTLogTilesLogClient(lr string, origin string, vkey string) logClient {
+type renderedLeaf struct {
+	raw      []byte
+	rendered string
+}
+
+func newTLogTilesLogClient(lr string, origin string, vkey string, renderer func([]byte) string) logClient {
 	if !strings.HasSuffix(lr, "/") {
 		lr = lr + "/"
 	}
@@ -241,6 +258,7 @@ func newTLogTilesLogClient(lr string, origin string, vkey string) logClient {
 		fetcher: func(ctx context.Context, path string) ([]byte, error) {
 			return fetcher(ctx, path)
 		},
+		renderer: renderer,
 	}
 }
 
@@ -248,6 +266,7 @@ type tLogTilesLogClient struct {
 	origin   string
 	verifier note.Verifier
 	fetcher  tiles_client.Fetcher
+	renderer func([]byte) string
 }
 
 func (c *tLogTilesLogClient) GetOrigin() string {
@@ -267,18 +286,20 @@ func (c *tLogTilesLogClient) GetCheckpoint() (*model.Checkpoint, error) {
 	}, err
 }
 
-func (c *tLogTilesLogClient) GetLeaf(size, index uint64) ([]byte, error) {
+func (c *tLogTilesLogClient) GetLeaf(size, index uint64) (renderedLeaf, error) {
 	bundleIndex := index / 256
 	leafOffset := index % 256
 	// TODO(mhutchinson): cache the bundle so consecutive leaf fetching is efficient
 	bundle, err := tiles_client.GetEntryBundle(context.Background(), c.fetcher, bundleIndex, size)
 	if err != nil {
-		return nil, err
+		return renderedLeaf{}, err
 	}
-	return bundle.Entries[leafOffset], nil
+	raw := bundle.Entries[leafOffset]
+	rendered := c.renderer(raw)
+	return renderedLeaf{raw, rendered}, nil
 }
 
-func newServerlessLogClient(lr string, origin string, vkey string) logClient {
+func newServerlessLogClient(lr string, origin string, vkey string, renderer func([]byte) string) logClient {
 	if !strings.HasSuffix(lr, "/") {
 		lr = lr + "/"
 	}
@@ -295,6 +316,7 @@ func newServerlessLogClient(lr string, origin string, vkey string) logClient {
 		origin:   origin,
 		verifier: verifier,
 		fetcher:  fetcher,
+		renderer: renderer,
 	}
 }
 
@@ -302,6 +324,7 @@ type serverlessLogClient struct {
 	origin   string
 	verifier note.Verifier
 	fetcher  serverless_client.Fetcher
+	renderer func([]byte) string
 }
 
 func (c *serverlessLogClient) GetOrigin() string {
@@ -321,9 +344,10 @@ func (c *serverlessLogClient) GetCheckpoint() (*model.Checkpoint, error) {
 	}, err
 }
 
-func (c *serverlessLogClient) GetLeaf(size, index uint64) ([]byte, error) {
-	leaf, err := serverless_client.GetLeaf(context.Background(), c.fetcher, index)
-	return leaf, err
+func (c *serverlessLogClient) GetLeaf(size, index uint64) (renderedLeaf, error) {
+	raw, err := serverless_client.GetLeaf(context.Background(), c.fetcher, index)
+	rendered := c.renderer(raw)
+	return renderedLeaf{raw, rendered}, err
 }
 
 func newSumDBLogClient(lr string, origin string, vkey string) logClient {
@@ -371,7 +395,7 @@ func (c *sumDBLogClient) GetCheckpoint() (*model.Checkpoint, error) {
 	}, err
 }
 
-func (c *sumDBLogClient) GetLeaf(size, index uint64) ([]byte, error) {
+func (c *sumDBLogClient) GetLeaf(size, index uint64) (renderedLeaf, error) {
 	const pathBase = 1000
 	offset := index / 256
 	nStr := fmt.Sprintf("%03d", offset%pathBase)
@@ -385,7 +409,7 @@ func (c *sumDBLogClient) GetLeaf(size, index uint64) ([]byte, error) {
 	}
 	data, err := c.fetcher(context.Background(), path)
 	if err != nil {
-		return nil, err
+		return renderedLeaf{}, err
 	}
 	dataToLeaves := func(data []byte) [][]byte {
 		result := make([][]byte, 0)
@@ -402,7 +426,8 @@ func (c *sumDBLogClient) GetLeaf(size, index uint64) ([]byte, error) {
 		return result
 	}
 	leaves := dataToLeaves(data)
-	return leaves[index%256], nil
+	raw := leaves[index%256]
+	return renderedLeaf{raw, string(raw)}, nil
 }
 
 // newFetcher creates a Fetcher for the log at the given root location.
@@ -453,4 +478,8 @@ func readHTTP(ctx context.Context, u *url.URL) ([]byte, error) {
 		}
 	}()
 	return io.ReadAll(resp.Body)
+}
+
+func directRender(raw []byte) string {
+	return string(raw)
 }

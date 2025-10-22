@@ -79,6 +79,6 @@ func (m *ViewModel) SetWitnessN(n uint) {
 }
 
 type Leaf struct {
-	Contents []byte
+	Contents string
 	Index    uint64
 }
