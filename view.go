@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/mhutchinson/woodpecker/model"
@@ -166,12 +167,14 @@ func (v View) refreshFromModel() {
 	v.witArea.SetTitle(fmt.Sprintf("Witnessed Checkpoint (N=%d)", v.Model.GetWitnessN()))
 	wit := v.Model.GetWitnessed()
 	if wit != nil {
-		text := fmt.Sprintf("Size: %d | Hash: %x", wit.Size, wit.Hash)
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "Size: %d | Hash: %x", wit.Size, wit.Hash)
 		wits := wit.Note.Sigs[1:]
 		for _, w := range wits {
-			text = fmt.Sprintf("%s\n%s", text, w.Name)
+			sb.WriteString("\n")
+			sb.WriteString(w.Name)
 		}
-		v.witArea.SetText(text)
+		v.witArea.SetText(sb.String())
 	}
 
 	v.leafPage.SetTitle(fmt.Sprintf("Leaf %d", v.Model.GetLeaf().Index))
