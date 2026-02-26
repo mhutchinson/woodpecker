@@ -155,9 +155,10 @@ func (c *Controller) InitFromLog() {
 }
 
 func (c *Controller) RefreshCheckpoint() {
-	witnessed := make(chan *model.Checkpoint)
+	witnessed := make(chan *model.Checkpoint, 1)
 	// Fetch the witnessed checkpoint in parallel
 	go func() {
+		defer close(witnessed)
 		logID := distclient.LogID(log.ID(c.current.GetOrigin()))
 		bs, err := c.Distributor.GetCheckpointN(logID, c.Model.GetWitnessN())
 		if err != nil {
