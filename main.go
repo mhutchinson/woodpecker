@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -391,13 +392,13 @@ func (c *sumDBLogClient) GetLeaf(size, index uint64) ([]byte, error) {
 	dataToLeaves := func(data []byte) [][]byte {
 		result := make([][]byte, 0)
 		start := 0
-		for i, b := range data {
-			if b == '\n' {
-				if i > start && data[i-1] == '\n' {
-					result = append(result, data[start:i])
-					start = i + 1
-				}
+		for {
+			i := bytes.Index(data[start:], []byte("\n\n"))
+			if i == -1 {
+				break
 			}
+			result = append(result, data[start:start+i+1])
+			start += i + 2
 		}
 		result = append(result, data[start:])
 		return result
