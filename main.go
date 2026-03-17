@@ -191,13 +191,19 @@ func (c *Controller) GetLeaf(size, index uint64) {
 }
 
 func (c *Controller) PrevLeaf() {
-	size := c.Model.GetCheckpoint().Size
-	c.GetLeaf(size, c.Model.GetLeaf().Index-1)
+	idx := c.Model.GetLeaf().Index
+	if idx > 0 {
+		size := c.Model.GetCheckpoint().Size
+		c.GetLeaf(size, idx-1)
+	}
 }
 
 func (c *Controller) NextLeaf() {
 	size := c.Model.GetCheckpoint().Size
-	c.GetLeaf(size, c.Model.GetLeaf().Index+1)
+	idx := c.Model.GetLeaf().Index
+	if idx+1 < size {
+		c.GetLeaf(size, idx+1)
+	}
 }
 
 func (c *Controller) IncWitnesses() {
