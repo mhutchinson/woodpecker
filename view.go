@@ -79,11 +79,11 @@ func NewView(cb Callbacks, m *model.ViewModel) View {
 	jumpPage := tview.NewInputField()
 	jumpPage.SetLabel("Jump to index").SetFieldWidth(10).SetAcceptanceFunc(tview.InputFieldInteger).SetDoneFunc(func(key tcell.Key) {
 		t := jumpPage.GetText()
-		i, err := strconv.Atoi(t)
+		i, err := strconv.ParseUint(t, 10, 64)
 		if err != nil {
 			return
 		}
-		cb.GetLeaf(m.GetCheckpoint().Size, uint64(i))
+		cb.GetLeaf(m.GetCheckpoint().Size, i)
 		bottomArea.SwitchToPage("errors")
 		app.SetFocus(mainArea)
 	})
