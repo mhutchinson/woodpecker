@@ -48,6 +48,12 @@ var (
 )
 
 var (
+	httpClient = &http.Client{
+		Timeout: 10 * time.Second,
+	}
+)
+
+var (
 	origin          = flag.String("origin", "", "The origin of a built-in log to open by default")
 	customLogUrl    = flag.String("custom_log_url", "", "The base URL of a custom log to register")
 	customLogOrigin = flag.String("custom_log_origin", "", "The origin of a custom log to register")
@@ -78,7 +84,7 @@ func main() {
 		logOrigins = append(logOrigins, c.GetOrigin())
 	}
 	model := model.NewViewModel(logOrigins)
-	controller := NewController(model, logClients, *distclient.NewRestDistributor(distURL, http.DefaultClient))
+	controller := NewController(model, logClients, *distclient.NewRestDistributor(distURL, httpClient))
 
 	logIdx := 0
 	if len(*origin) > 0 {
@@ -442,7 +448,7 @@ func readHTTP(ctx context.Context, u *url.URL) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.DefaultClient.Do(req.WithContext(ctx))
+	resp, err := httpClient.Do(req.WithContext(ctx))
 	if err != nil {
 		return nil, err
 	}
