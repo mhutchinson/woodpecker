@@ -444,11 +444,11 @@ var getByScheme = map[string]func(context.Context, *url.URL) ([]byte, error){
 }
 
 func readHTTP(ctx context.Context, u *url.URL) ([]byte, error) {
-	req, err := http.NewRequest("GET", u.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := httpClient.Do(req.WithContext(ctx))
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
