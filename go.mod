@@ -3,13 +3,13 @@ module github.com/mhutchinson/woodpecker
 go 1.25.0
 
 require (
-	github.com/gdamore/tcell/v2 v2.13.8
+	github.com/gdamore/tcell/v2 v2.13.9
 	github.com/rivo/tview v0.42.0
 	github.com/transparency-dev/distributor v0.3.0
 	github.com/transparency-dev/formats v0.1.0
 	github.com/transparency-dev/serverless-log v0.0.0-20240507164215-bf5370b31f94
 	github.com/transparency-dev/trillian-tessera v0.0.0-20240827143803-0cfc4330d4f8
-	golang.org/x/mod v0.34.0
+	golang.org/x/mod v0.35.0
 	k8s.io/klog/v2 v2.140.0
 )
 
