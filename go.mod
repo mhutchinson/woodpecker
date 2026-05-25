@@ -3,7 +3,7 @@ module github.com/mhutchinson/woodpecker
 go 1.25.0
 
 require (
-	github.com/gdamore/tcell/v2 v2.13.9
+	github.com/gdamore/tcell/v2 v2.13.10
 	github.com/rivo/tview v0.42.0
 	github.com/transparency-dev/distributor v0.3.0
 	github.com/transparency-dev/formats v0.1.0
