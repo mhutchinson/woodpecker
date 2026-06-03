@@ -14,7 +14,7 @@ type mockLogClient struct{}
 func (m *mockLogClient) GetOrigin() string                         { return "origin" }
 func (m *mockLogClient) GetVerifier() note.Verifier                { return nil }
 func (m *mockLogClient) GetCheckpoint() (*model.Checkpoint, error) { return nil, nil }
-func (m *mockLogClient) GetLeaf(size, index uint64) ([]byte, error) {
+func (m *mockLogClient) GetLeaf(checkpoint *model.Checkpoint, index uint64) ([]byte, error) {
 	return []byte("leaf"), nil
 }
 func (m *mockLogClient) FormatLeaf(leaf []byte) string {
