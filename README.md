@@ -1,5 +1,7 @@
 # Woodpecker - The Transparency Log Inspector
 
+![Screenshot of Woodpecker](./demo.gif)
+
 Woodpecker is a command-line tool that launches a UI to inspect logs.
 
 To run it:
