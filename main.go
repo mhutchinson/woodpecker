@@ -146,7 +146,7 @@ func main() {
 		logOrigins = append(logOrigins, c.GetOrigin())
 	}
 
-	dist := *distclient.NewRestDistributor(distURL, httpClient)
+	dist := distclient.NewRestDistributor(distURL, httpClient)
 	witKeys, err := dist.GetWitnesses()
 	if err != nil {
 		panic(fmt.Sprintf("Witnesses not available: %v", err))

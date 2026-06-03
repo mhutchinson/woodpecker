@@ -5,7 +5,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mhutchinson/woodpecker/model"
-	distclient "github.com/transparency-dev/distributor/client"
 	"github.com/transparency-dev/formats/log"
 	"golang.org/x/mod/sumdb/note"
 )
@@ -28,7 +27,7 @@ func TestPrevLeafUnderflow(t *testing.T) {
 	clients := map[string]logClient{
 		"origin": &mockLogClient{},
 	}
-	m := NewModel([]string{"origin"}, clients, distclient.RestDistributor{}, nil, "origin")
+	m := NewModel([]string{"origin"}, clients, &mockDistributor{}, nil, "origin")
 
 	// Set up model state
 	m.checkpoint = &model.Checkpoint{
@@ -58,7 +57,7 @@ func TestNextLeafOverflow(t *testing.T) {
 	clients := map[string]logClient{
 		"origin": &mockLogClient{},
 	}
-	m := NewModel([]string{"origin"}, clients, distclient.RestDistributor{}, nil, "origin")
+	m := NewModel([]string{"origin"}, clients, &mockDistributor{}, nil, "origin")
 
 	// Set up model state: last leaf is at index 9 for size 10
 	m.checkpoint = &model.Checkpoint{

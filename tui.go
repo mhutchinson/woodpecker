@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mhutchinson/woodpecker/model"
+	"github.com/sahilm/fuzzy"
 	distclient "github.com/transparency-dev/distributor/client"
 	"github.com/transparency-dev/formats/log"
 	"golang.org/x/mod/sumdb/note"
@@ -27,7 +29,9 @@ type logItem struct {
 
 func (i logItem) Title() string       { return i.origin }
 func (i logItem) Description() string { return fmt.Sprintf("Type: %s | URL: %s", i.logType, i.url) }
-func (i logItem) FilterValue() string { return i.origin }
+func (i logItem) FilterValue() string {
+	return fmt.Sprintf("%s\x01%s\x01%s", i.origin, i.logType, i.url)
+}
 
 // Messages for the Bubble Tea loop.
 type tickMsg struct{}
@@ -43,11 +47,15 @@ type leafMsg struct {
 	err  error
 }
 
+type distributorClient interface {
+	GetCheckpointN(l distclient.LogID, n uint) ([]byte, error)
+}
+
 // Model represents the state of our Bubble Tea TUI.
 type Model struct {
 	logOrigins    []string
 	logClients    map[string]logClient
-	distributor   distclient.RestDistributor
+	distributor   distributorClient
 	witVerifiers  []note.Verifier
 	currentLog    string
 	currentClient logClient
@@ -73,7 +81,7 @@ type Model struct {
 	loadingLeaf  bool
 }
 
-func NewModel(origins []string, clients map[string]logClient, dist distclient.RestDistributor, witVers []note.Verifier, initialLog string) *Model {
+func NewModel(origins []string, clients map[string]logClient, dist distributorClient, witVers []note.Verifier, initialLog string) *Model {
 	items := make([]list.Item, len(origins))
 	for i, o := range origins {
 		client, ok := clients[o]
@@ -93,6 +101,7 @@ func NewModel(origins []string, clients map[string]logClient, dist distclient.Re
 	l := list.New(items, list.NewDefaultDelegate(), 0, 0)
 	l.Title = "Select Transparency Log"
 	l.SetShowHelp(false)
+	l.Filter = fuzzyFilter
 
 	ti := textinput.New()
 	ti.Placeholder = "Leaf Index (e.g. 1234)"
@@ -163,7 +172,11 @@ func (m *Model) fetchCheckpointCmd() tea.Cmd {
 				witnessed <- nil
 				return
 			}
-			cp, _, n, _ := log.ParseCheckpoint(bs, m.currentClient.GetOrigin(), m.currentClient.GetVerifier(), m.witVerifiers...)
+			cp, _, n, err := log.ParseCheckpoint(bs, m.currentClient.GetOrigin(), m.currentClient.GetVerifier(), m.witVerifiers...)
+			if err != nil {
+				witnessed <- nil
+				return
+			}
 			witnessed <- &model.Checkpoint{
 				Checkpoint: cp,
 				Note:       n,
@@ -204,13 +217,65 @@ func (m *Model) fetchLeafCmd(index uint64) tea.Cmd {
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		// Global keys when not typing
-		switch m.activeView {
-		case "leaf":
-			switch msg.String() {
-			case "ctrl+c", "q":
+	// Global quit key
+	if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "ctrl+c" {
+		return m, tea.Quit
+	}
+
+	// 1. View-specific updates
+	switch m.activeView {
+	case "logs":
+		// Key interception when not filtering
+		if keyMsg, ok := msg.(tea.KeyMsg); ok && m.list.FilterState() != list.Filtering {
+			switch keyMsg.String() {
+			case "enter":
+				if selected, ok := m.list.SelectedItem().(logItem); ok {
+					m.selectLog(selected.origin)
+					m.activeView = "leaf"
+					return m, m.fetchCheckpointCmd()
+				}
+			case "esc", "q":
+				m.activeView = "leaf"
+				return m, nil
+			}
+		}
+
+		// Forward all messages to the list when in logs view
+		var listCmd tea.Cmd
+		m.list, listCmd = m.list.Update(msg)
+		if listCmd != nil {
+			cmds = append(cmds, listCmd)
+		}
+
+	case "jump":
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			switch keyMsg.String() {
+			case "enter":
+				val := m.textInput.Value()
+				if idx, err := strconv.ParseUint(val, 10, 64); err == nil && m.checkpoint != nil {
+					if idx < m.checkpoint.Size {
+						m.loadingLeaf = true
+						m.activeView = "leaf"
+						return m, m.fetchLeafCmd(idx)
+					}
+				}
+				m.activeView = "leaf"
+				return m, nil
+			case "esc":
+				m.activeView = "leaf"
+				return m, nil
+			}
+		}
+		var cmd tea.Cmd
+		m.textInput, cmd = m.textInput.Update(msg)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+
+	case "leaf":
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			switch keyMsg.String() {
+			case "q":
 				return m, tea.Quit
 			case "left":
 				if m.leaf.Index > 0 && m.checkpoint != nil {
@@ -241,48 +306,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.fetchCheckpointCmd()
 				}
 			}
-
-			// Delegate other keys (Up, Down, PgUp, PgDn) to the viewport for scrolling
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
-			return m, cmd
-		case "logs":
-			switch msg.String() {
-			case "enter":
-				if selected, ok := m.list.SelectedItem().(logItem); ok {
-					m.selectLog(selected.origin)
-					m.activeView = "leaf"
-					return m, m.fetchCheckpointCmd()
-				}
-			case "esc", "q":
-				m.activeView = "leaf"
-				return m, nil
+			if cmd != nil {
+				cmds = append(cmds, cmd)
 			}
-			var cmd tea.Cmd
-			m.list, cmd = m.list.Update(msg)
-			return m, cmd
-		case "jump":
-			switch msg.String() {
-			case "enter":
-				val := m.textInput.Value()
-				if idx, err := strconv.ParseUint(val, 10, 64); err == nil && m.checkpoint != nil {
-					if idx < m.checkpoint.Size {
-						m.loadingLeaf = true
-						m.activeView = "leaf"
-						return m, m.fetchLeafCmd(idx)
-					}
-				}
-				m.activeView = "leaf"
-				return m, nil
-			case "esc":
-				m.activeView = "leaf"
-				return m, nil
-			}
-			var cmd tea.Cmd
-			m.textInput, cmd = m.textInput.Update(msg)
-			return m, cmd
 		}
+	}
 
+	// 2. Global message handling
+	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -292,17 +325,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			checkpointHeight = 5
 		}
 
-		// Total height constraint:
-		// Header (1) + Space (1) + Checkpoint outer (checkpointHeight + 2) + Space (1) + Lower outer (viewportHeight + 2) + Space (1) + Footer (1) = m.height - 1
-		// 1 + 1 + checkpointHeight + 2 + 1 + viewportHeight + 2 + 1 + 1 = m.height - 1
-		// checkpointHeight + viewportHeight + 9 = m.height - 1
-		// viewportHeight = m.height - checkpointHeight - 10
 		viewportHeight := m.height - checkpointHeight - 10
 		if viewportHeight < 5 {
 			viewportHeight = 5
 		}
 
-		// Inner viewport height is viewportHeight - 2 because of title and space inside mainBoxStyle
 		vpHeight := viewportHeight - 2
 		if vpHeight < 3 {
 			vpHeight = 3
@@ -313,7 +340,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.list.SetSize(msg.Width-6, vpHeight)
 
 	case tickMsg:
-		return m, tea.Batch(m.fetchCheckpointCmd(), m.startPeriodicTicker())
+		return m, tea.Batch(append(cmds, m.fetchCheckpointCmd(), m.startPeriodicTicker())...)
 
 	case checkpointMsg:
 		m.loadingCheck = false
@@ -325,7 +352,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.leaf.Contents == nil || (m.checkpoint != nil && m.leaf.Index >= m.checkpoint.Size) {
 				if m.checkpoint != nil && m.checkpoint.Size > 0 {
 					m.loadingLeaf = true
-					return m, m.fetchLeafCmd(m.checkpoint.Size - 1)
+					return m, tea.Batch(append(cmds, m.fetchLeafCmd(m.checkpoint.Size-1))...)
 				}
 			}
 		}
@@ -341,7 +368,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
-		return m, cmd
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	}
 
 	return m, tea.Batch(cmds...)
@@ -506,4 +535,104 @@ func (m *Model) View() string {
 	sb.WriteString(footerStyle.Render(" [q] Quit  •  [←/→] Prev/Next Leaf  •  [↑/↓] Scroll Content  •  [l] Switch Log  •  [g] Jump  •  [w/W] Witnesses"))
 
 	return sb.String()
+}
+
+func mergeIndices(existing, newIndices []int) []int {
+	m := make(map[int]bool)
+	for _, idx := range existing {
+		m[idx] = true
+	}
+	for _, idx := range newIndices {
+		m[idx] = true
+	}
+	result := make([]int, 0, len(m))
+	for idx := range m {
+		result = append(result, idx)
+	}
+	sort.Ints(result)
+	return result
+}
+
+type scoreRank struct {
+	list.Rank
+	score int
+}
+
+func fuzzyFilter(query string, targets []string) []list.Rank {
+
+	if query == "" {
+		ranks := make([]list.Rank, len(targets))
+		for i := range targets {
+			ranks[i] = list.Rank{
+				Index: i,
+			}
+		}
+		return ranks
+	}
+
+	terms := strings.Fields(query)
+	if len(terms) == 0 {
+		ranks := make([]list.Rank, len(targets))
+		for i := range targets {
+			ranks[i] = list.Rank{
+				Index: i,
+			}
+		}
+		return ranks
+	}
+
+	matchedTargets := make(map[int]map[int]fuzzy.Match)
+	for termIdx, term := range terms {
+		matches := fuzzy.FindNoSort(term, targets)
+		for _, m := range matches {
+			if matchedTargets[m.Index] == nil {
+				matchedTargets[m.Index] = make(map[int]fuzzy.Match)
+			}
+			matchedTargets[m.Index][termIdx] = m
+		}
+	}
+
+	var sRanks []scoreRank
+	for targetIdx, termMatches := range matchedTargets {
+		if len(termMatches) != len(terms) {
+			continue
+		}
+
+		var score int
+		var matchedIndices []int
+		for _, m := range termMatches {
+			score += m.Score
+			matchedIndices = mergeIndices(matchedIndices, m.MatchedIndexes)
+		}
+
+		targetVal := targets[targetIdx]
+		limit := strings.IndexByte(targetVal, 0x01)
+		if limit != -1 {
+			var filtered []int
+			for _, idx := range matchedIndices {
+				if idx < limit {
+					filtered = append(filtered, idx)
+				}
+			}
+			matchedIndices = filtered
+		}
+
+		sRanks = append(sRanks, scoreRank{
+			Rank: list.Rank{
+				Index:          targetIdx,
+				MatchedIndexes: matchedIndices,
+			},
+			score: score,
+		})
+	}
+
+	sort.SliceStable(sRanks, func(i, j int) bool {
+		return sRanks[i].score > sRanks[j].score
+	})
+
+	ranks := make([]list.Rank, len(sRanks))
+	for i, sr := range sRanks {
+		ranks[i] = sr.Rank
+	}
+	return ranks
 }

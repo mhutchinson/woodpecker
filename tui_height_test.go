@@ -6,7 +6,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mhutchinson/woodpecker/model"
-	distclient "github.com/transparency-dev/distributor/client"
 	"github.com/transparency-dev/formats/log"
 )
 
@@ -18,7 +17,7 @@ func TestTUIHeightAndContent(t *testing.T) {
 	m := NewModel(
 		[]string{"test-log"},
 		clients,
-		distclient.RestDistributor{},
+		&mockDistributor{},
 		nil,
 		"test-log",
 	)
