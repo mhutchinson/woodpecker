@@ -3,6 +3,11 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto"
+	"crypto/ed25519"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -10,8 +15,10 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
+	"filippo.io/sunlight"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mhutchinson/woodpecker/model"
 	distclient "github.com/transparency-dev/distributor/client"
@@ -20,33 +27,14 @@ import (
 	serverless_client "github.com/transparency-dev/serverless-log/client"
 	tiles_client "github.com/transparency-dev/trillian-tessera/client"
 	"golang.org/x/mod/sumdb/note"
+	"golang.org/x/mod/sumdb/tlog"
+	"golang.org/x/sync/singleflight"
 	"k8s.io/klog/v2"
 )
 
 const distURL = "https://api.transparency.dev"
 
-var (
-	clients = []logClient{
-		newServerlessLogClient("https://api.transparency.dev/armored-witness-firmware/prod/log/1/",
-			"transparency.dev/armored-witness/firmware_transparency/prod/1",
-			"transparency.dev-aw-ftlog-prod-1+3e6d87ee+Aa3qdhefd2cc/98jV3blslJT2L+iFR8WKHeGcgFmyjnt"),
-		newServerlessLogClient("https://api.transparency.dev/armored-witness-firmware/ci/log/4/",
-			"transparency.dev/armored-witness/firmware_transparency/ci/4",
-			"transparency.dev-aw-ftlog-ci-4+30fe79e3+AUDoas+smwQDTlYbTzbEcAW+N6WyvB/4CysMWjpnRgat"),
-		newServerlessLogClient("https://raw.githubusercontent.com/f-secure-foundry/armory-drive-log/master/log/",
-			"Armory Drive Prod 2",
-			"armory-drive-log+16541b8f+AYDPmG5pQp4Bgu0a1mr5uDZ196+t8lIVIfWQSPWmP+Jv"),
-		newServerlessLogClient("https://fwupd.org/ftlog/lvfs/",
-			"lvfs",
-			"lvfs+7908d142+ASnlGgOh+634tcE/2Lp3wV7k/cLoU6ncawmb/BLC1oMU"),
-		newSumDBLogClient("https://sum.golang.org/",
-			"go.sum database tree",
-			"sum.golang.org+033de0ae+Ac4zctda0e5eza+HJyk9SxEdh+s3Ux18htTTAD8OuAn8"),
-		newTLogTilesLogClient("https://log2025-1.rekor.sigstore.dev/api/v2/",
-			"log2025-1.rekor.sigstore.dev",
-			"log2025-1.rekor.sigstore.dev+cf119915+AbfK5adZJxsI323FwGD2AJJ9F4i89cfDuLdGJBIYntuO"),
-	}
-)
+var clients []logClient
 
 var (
 	httpClient = &http.Client{
@@ -59,20 +47,94 @@ var (
 	customLogUrl    = flag.String("custom_log_url", "", "The base URL of a custom log to register")
 	customLogOrigin = flag.String("custom_log_origin", "", "The origin of a custom log to register")
 	customLogVKey   = flag.String("custom_log_vkey", "", "The verifier key of a custom log to register")
-	customLogType   = flag.String("custom_log_type", "", "The type of the custom log specified by the other custom_* flags. Must be empty, or one of {tiles, serverless}.")
+	customLogType   = flag.String("custom_log_type", "", "The type of the custom log specified by the other custom_* flags. Must be empty, or one of {tiles, serverless, static-ct}.")
 )
 
 func main() {
 	flag.Parse()
 
+	// Initialize built-in clients
+	builtInClients := []struct {
+		url, origin, vkey string
+		logType           string // "serverless", "sumdb", "tiles"
+	}{
+		{
+			url:     "https://sum.golang.org/",
+			origin:  "go.sum database tree",
+			vkey:    "sum.golang.org+033de0ae+Ac4zctda0e5eza+HJyk9SxEdh+s3Ux18htTTAD8OuAn8",
+			logType: "sumdb",
+		},
+		{
+			url:     "https://log2025-1.rekor.sigstore.dev/api/v2/",
+			origin:  "log2025-1.rekor.sigstore.dev",
+			vkey:    "log2025-1.rekor.sigstore.dev+cf119915+AbfK5adZJxsI323FwGD2AJJ9F4i89cfDuLdGJBIYntuO",
+			logType: "tiles",
+		},
+		{
+			url:     "https://api.transparency.dev/armored-witness-firmware/prod/log/1/",
+			origin:  "transparency.dev/armored-witness/firmware_transparency/prod/1",
+			vkey:    "transparency.dev-aw-ftlog-prod-1+3e6d87ee+Aa3qdhefd2cc/98jV3blslJT2L+iFR8WKHeGcgFmyjnt",
+			logType: "serverless",
+		},
+		{
+			url:     "https://api.transparency.dev/armored-witness-firmware/ci/log/4/",
+			origin:  "transparency.dev/armored-witness/firmware_transparency/ci/4",
+			vkey:    "transparency.dev-aw-ftlog-ci-4+30fe79e3+AUDoas+smwQDTlYbTzbEcAW+N6WyvB/4CysMWjpnRgat",
+			logType: "serverless",
+		},
+		{
+			url:     "https://raw.githubusercontent.com/f-secure-foundry/armory-drive-log/master/log/",
+			origin:  "Armory Drive Prod 2",
+			vkey:    "armory-drive-log+16541b8f+AYDPmG5pQp4Bgu0a1mr5uDZ196+t8lIVIfWQSPWmP+Jv",
+			logType: "serverless",
+		},
+		{
+			url:     "https://storage.googleapis.com/coachandhorses2026h1.staging.certificate.transparency.goog/",
+			origin:  "coachandhorses2026h1.staging.certificate.transparency.goog",
+			vkey:    "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAECHOhXfvYgTcu+Fnl7M7niFj3FgqWlQpXUSWUDw2KAaJXvhGxdJTtmyciN5rWTiDtpeNENVmsUTHFS4XQgeRE0g==",
+			logType: "static-ct",
+		},
+	}
+
+	for _, c := range builtInClients {
+		var client logClient
+		var err error
+		switch c.logType {
+		case "serverless":
+			client, err = newServerlessLogClient(c.url, c.origin, c.vkey)
+		case "sumdb":
+			client, err = newSumDBLogClient(c.url, c.origin, c.vkey)
+		case "tiles":
+			client, err = newTLogTilesLogClient(c.url, c.origin, c.vkey)
+		case "static-ct":
+			client, err = newStaticCTLogClient(c.url, c.origin, c.vkey)
+		}
+		if err != nil {
+			panic(fmt.Sprintf("Failed to initialize built-in client for %s: %v", c.origin, err))
+		}
+		clients = append(clients, client)
+	}
+
 	switch *customLogType {
 	case "":
 		break
 	case "tiles":
-		c := newTLogTilesLogClient(*customLogUrl, *customLogOrigin, *customLogVKey)
+		c, err := newTLogTilesLogClient(*customLogUrl, *customLogOrigin, *customLogVKey)
+		if err != nil {
+			klog.Exitf("Failed to initialize custom tiles log: %v", err)
+		}
 		clients = append([]logClient{c}, clients...)
 	case "serverless":
-		c := newServerlessLogClient(*customLogUrl, *customLogOrigin, *customLogVKey)
+		c, err := newServerlessLogClient(*customLogUrl, *customLogOrigin, *customLogVKey)
+		if err != nil {
+			klog.Exitf("Failed to initialize custom serverless log: %v", err)
+		}
+		clients = append([]logClient{c}, clients...)
+	case "static-ct":
+		c, err := newStaticCTLogClient(*customLogUrl, *customLogOrigin, *customLogVKey)
+		if err != nil {
+			klog.Exitf("Failed to initialize custom static-ct log: %v", err)
+		}
 		clients = append([]logClient{c}, clients...)
 	default:
 		klog.Exitf("custom_log_type %s not recognised", *customLogType)
@@ -120,38 +182,51 @@ type logClient interface {
 	GetVerifier() note.Verifier
 	GetCheckpoint() (*model.Checkpoint, error)
 	GetLeaf(size, index uint64) ([]byte, error)
+	FormatLeaf(leaf []byte) string
+	GetLogType() string
+	GetURL() string
 }
 
-func newTLogTilesLogClient(lr string, origin string, vkey string) logClient {
+func newTLogTilesLogClient(lr string, origin string, vkey string) (logClient, error) {
 	if !strings.HasSuffix(lr, "/") {
 		lr = lr + "/"
 	}
 	logRoot, err := url.Parse(lr)
 	if err != nil {
-		klog.Exitf("Failed to create URL from %q: %v", lr, err)
+		return nil, fmt.Errorf("failed to parse URL %q: %w", lr, err)
 	}
 	fetcher := newFetcher(logRoot)
 	verifier, err := note.NewVerifier(vkey)
 	if err != nil {
-		klog.Exitf("Failed to create verifier from %q: %v", vkey, err)
+		return nil, fmt.Errorf("failed to create verifier: %w", err)
 	}
 	if len(origin) == 0 {
 		origin = verifier.Name()
 		klog.Infof("No origin provided; using verifier name: %q", origin)
 	}
 	return &tLogTilesLogClient{
+		url:      lr,
 		origin:   origin,
 		verifier: verifier,
 		fetcher: func(ctx context.Context, path string) ([]byte, error) {
 			return fetcher(ctx, path)
 		},
-	}
+	}, nil
 }
 
 type tLogTilesLogClient struct {
+	url      string
 	origin   string
 	verifier note.Verifier
 	fetcher  tiles_client.Fetcher
+}
+
+func (c *tLogTilesLogClient) GetLogType() string {
+	return "tiles"
+}
+
+func (c *tLogTilesLogClient) GetURL() string {
+	return c.url
 }
 
 func (c *tLogTilesLogClient) GetOrigin() string {
@@ -182,30 +257,44 @@ func (c *tLogTilesLogClient) GetLeaf(size, index uint64) ([]byte, error) {
 	return bundle.Entries[leafOffset], nil
 }
 
-func newServerlessLogClient(lr string, origin string, vkey string) logClient {
+func (c *tLogTilesLogClient) FormatLeaf(leaf []byte) string {
+	return string(leaf)
+}
+
+func newServerlessLogClient(lr string, origin string, vkey string) (logClient, error) {
 	if !strings.HasSuffix(lr, "/") {
 		lr = lr + "/"
 	}
 	logRoot, err := url.Parse(lr)
 	if err != nil {
-		klog.Exit(err)
+		return nil, fmt.Errorf("failed to parse URL %q: %w", lr, err)
 	}
 	fetcher := newFetcher(logRoot)
 	verifier, err := note.NewVerifier(vkey)
 	if err != nil {
-		klog.Exit(err)
+		return nil, fmt.Errorf("failed to create verifier: %w", err)
 	}
 	return &serverlessLogClient{
+		url:      lr,
 		origin:   origin,
 		verifier: verifier,
 		fetcher:  fetcher,
-	}
+	}, nil
 }
 
 type serverlessLogClient struct {
+	url      string
 	origin   string
 	verifier note.Verifier
 	fetcher  serverless_client.Fetcher
+}
+
+func (c *serverlessLogClient) GetLogType() string {
+	return "serverless"
+}
+
+func (c *serverlessLogClient) GetURL() string {
+	return c.url
 }
 
 func (c *serverlessLogClient) GetOrigin() string {
@@ -230,27 +319,41 @@ func (c *serverlessLogClient) GetLeaf(size, index uint64) ([]byte, error) {
 	return leaf, err
 }
 
-func newSumDBLogClient(lr string, origin string, vkey string) logClient {
+func (c *serverlessLogClient) FormatLeaf(leaf []byte) string {
+	return string(leaf)
+}
+
+func newSumDBLogClient(lr string, origin string, vkey string) (logClient, error) {
 	logRoot, err := url.Parse(lr)
 	if err != nil {
-		klog.Exit(err)
+		return nil, fmt.Errorf("failed to parse URL %q: %w", lr, err)
 	}
 	fetcher := newFetcher(logRoot)
 	verifier, err := note.NewVerifier(vkey)
 	if err != nil {
-		klog.Exit(err)
+		return nil, fmt.Errorf("failed to create verifier: %w", err)
 	}
 	return &sumDBLogClient{
+		url:      lr,
 		origin:   origin,
 		verifier: verifier,
 		fetcher:  fetcher,
-	}
+	}, nil
 }
 
 type sumDBLogClient struct {
+	url      string
 	origin   string
 	verifier note.Verifier
 	fetcher  serverless_client.Fetcher
+}
+
+func (c *sumDBLogClient) GetLogType() string {
+	return "sumdb"
+}
+
+func (c *sumDBLogClient) GetURL() string {
+	return c.url
 }
 
 func (c *sumDBLogClient) GetOrigin() string {
@@ -309,6 +412,10 @@ func (c *sumDBLogClient) GetLeaf(size, index uint64) ([]byte, error) {
 	return leaves[index%256], nil
 }
 
+func (c *sumDBLogClient) FormatLeaf(leaf []byte) string {
+	return string(leaf)
+}
+
 // newFetcher creates a Fetcher for the log at the given root location.
 func newFetcher(root *url.URL) serverless_client.Fetcher {
 	get := getByScheme[root.Scheme]
@@ -357,4 +464,241 @@ func readHTTP(ctx context.Context, u *url.URL) ([]byte, error) {
 		}
 	}()
 	return io.ReadAll(resp.Body)
+}
+
+func parseVerifierKey(vkey string, origin string) (note.Verifier, error) {
+	if v, err := tnote.NewVerifier(vkey); err == nil {
+		return v, nil
+	}
+	if k, err := base64.StdEncoding.DecodeString(vkey); err == nil {
+		if len(k) == 33 && k[0] == 0x01 {
+			pubKey := ed25519.PublicKey(k[1:])
+			vkeyStr, err := tnote.RFC6962VerifierString(origin, pubKey)
+			if err != nil {
+				return nil, err
+			}
+			return tnote.NewRFC6962Verifier(vkeyStr)
+		}
+		if pubKey, err := x509.ParsePKIXPublicKey(k); err == nil {
+			vkeyStr, err := tnote.RFC6962VerifierString(origin, pubKey)
+			if err != nil {
+				return nil, err
+			}
+			return tnote.NewRFC6962Verifier(vkeyStr)
+		}
+	}
+	return nil, fmt.Errorf("invalid verifier key format")
+}
+
+func extractPublicKey(vkey string) (crypto.PublicKey, error) {
+	if parts := strings.SplitN(vkey, "+", 3); len(parts) == 3 {
+		keyBytes, err := base64.StdEncoding.DecodeString(parts[2])
+		if err == nil && len(keyBytes) >= 2 {
+			alg := keyBytes[0]
+			keyData := keyBytes[1:]
+			switch alg {
+			case 1: // algEd25519
+				if len(keyData) == ed25519.PublicKeySize {
+					return ed25519.PublicKey(keyData), nil
+				}
+			case 5: // algRFC6962STH
+				if pubK, err := x509.ParsePKIXPublicKey(keyData); err == nil {
+					return pubK, nil
+				}
+			}
+		}
+	}
+
+	if k, err := base64.StdEncoding.DecodeString(vkey); err == nil {
+		if len(k) == 33 && k[0] == 0x01 {
+			return ed25519.PublicKey(k[1:]), nil
+		}
+		if pubKey, err := x509.ParsePKIXPublicKey(k); err == nil {
+			return pubKey, nil
+		}
+	}
+	return nil, fmt.Errorf("failed to extract public key from verifier key")
+}
+
+func newStaticCTLogClient(lr string, origin string, vkey string) (logClient, error) {
+	if !strings.HasSuffix(lr, "/") {
+		lr = lr + "/"
+	}
+
+	isRawKey := false
+	if _, err := base64.StdEncoding.DecodeString(vkey); err == nil && !strings.Contains(vkey, "+") {
+		isRawKey = true
+	}
+	if isRawKey && len(origin) == 0 {
+		return nil, fmt.Errorf("origin must be provided when using raw base64 verifier key")
+	}
+
+	verifier, err := parseVerifierKey(vkey, origin)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse verifier key: %w", err)
+	}
+	if len(origin) == 0 {
+		origin = verifier.Name()
+	}
+
+	pubK, err := extractPublicKey(vkey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract public key: %w", err)
+	}
+
+	client, err := sunlight.NewClient(&sunlight.ClientConfig{
+		MonitoringPrefix: lr,
+		PublicKey:        pubK,
+		UserAgent:        "woodpecker/0.1.0 (+https://github.com/mhutchinson/woodpecker)",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create sunlight client: %w", err)
+	}
+
+	return &staticCTLogClient{
+		url:      lr,
+		origin:   origin,
+		verifier: verifier,
+		client:   client,
+	}, nil
+}
+
+type staticCTLogClient struct {
+	url      string
+	origin   string
+	verifier note.Verifier
+	client   *sunlight.Client
+
+	mu         sync.RWMutex
+	latestTree tlog.Tree
+
+	sfg singleflight.Group
+}
+
+func (c *staticCTLogClient) GetLogType() string {
+	return "static-ct"
+}
+
+func (c *staticCTLogClient) GetURL() string {
+	return c.url
+}
+
+func (c *staticCTLogClient) GetOrigin() string {
+	return c.origin
+}
+
+func (c *staticCTLogClient) GetVerifier() note.Verifier {
+	return c.verifier
+}
+
+func (c *staticCTLogClient) GetCheckpoint() (*model.Checkpoint, error) {
+	val, err, _ := c.sfg.Do("checkpoint", func() (interface{}, error) {
+		cp, n, err := c.client.Checkpoint(context.Background())
+		if err != nil {
+			return nil, err
+		}
+
+		c.mu.Lock()
+		if cp.Tree.N > c.latestTree.N {
+			c.latestTree = cp.Tree
+		}
+		c.mu.Unlock()
+
+		var sb strings.Builder
+		sb.WriteString(n.Text)
+		if !strings.HasSuffix(n.Text, "\n") {
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\n")
+		for _, sig := range n.Sigs {
+			sb.WriteString(fmt.Sprintf("\u2014 %s %s\n", sig.Name, sig.Base64))
+		}
+		for _, sig := range n.UnverifiedSigs {
+			sb.WriteString(fmt.Sprintf("\u2014 %s %s\n", sig.Name, sig.Base64))
+		}
+
+		return &model.Checkpoint{
+			Checkpoint: &log.Checkpoint{
+				Origin: cp.Origin,
+				Size:   uint64(cp.Tree.N),
+				Hash:   cp.Tree.Hash[:],
+			},
+			Note: n,
+			Raw:  []byte(sb.String()),
+		}, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return val.(*model.Checkpoint), nil
+}
+
+func (c *staticCTLogClient) GetLeaf(size, index uint64) ([]byte, error) {
+	c.mu.RLock()
+	tree := c.latestTree
+	c.mu.RUnlock()
+
+	if tree.N <= int64(index) {
+		_, err := c.GetCheckpoint()
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch latest checkpoint: %w", err)
+		}
+		c.mu.RLock()
+		tree = c.latestTree
+		c.mu.RUnlock()
+		if tree.N <= int64(index) {
+			return nil, fmt.Errorf("index %d still out of bounds for fetched tree size %d", index, tree.N)
+		}
+	}
+
+	entry, _, err := c.client.Entry(context.Background(), tree, int64(index))
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch entry %d: %w", index, err)
+	}
+
+	return json.Marshal(entry)
+}
+
+func (c *staticCTLogClient) FormatLeaf(leaf []byte) string {
+	var entry struct {
+		Certificate    []byte
+		IsPrecert      bool
+		PreCertificate []byte
+	}
+	if err := json.Unmarshal(leaf, &entry); err != nil {
+		cert, err := x509.ParseCertificate(leaf)
+		if err != nil {
+			return string(leaf)
+		}
+		return formatCert(cert)
+	}
+
+	certBytes := entry.Certificate
+	if entry.IsPrecert {
+		certBytes = entry.PreCertificate
+	}
+	if len(certBytes) == 0 {
+		return string(leaf)
+	}
+	cert, err := x509.ParseCertificate(certBytes)
+	if err != nil {
+		return fmt.Sprintf("Failed to parse cert: %v", err)
+	}
+	return formatCert(cert)
+}
+
+func formatCert(cert *x509.Certificate) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Subject: %s\n", cert.Subject))
+	sb.WriteString(fmt.Sprintf("Issuer: %s\n", cert.Issuer))
+	sb.WriteString(fmt.Sprintf("Serial Number: %s\n", cert.SerialNumber))
+	sb.WriteString(fmt.Sprintf("Not Before: %s\n", cert.NotBefore.Format(time.RFC3339)))
+	sb.WriteString(fmt.Sprintf("Not After: %s\n", cert.NotAfter.Format(time.RFC3339)))
+	if len(cert.DNSNames) > 0 {
+		sb.WriteString("DNS Names:\n")
+		for _, name := range cert.DNSNames {
+			sb.WriteString(fmt.Sprintf("  - %s\n", name))
+		}
+	}
+	return sb.String()
 }

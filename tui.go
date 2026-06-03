@@ -20,11 +20,13 @@ import (
 
 // logItem wraps log origins for use in bubbles/list.
 type logItem struct {
-	origin string
+	origin  string
+	logType string
+	url     string
 }
 
 func (i logItem) Title() string       { return i.origin }
-func (i logItem) Description() string { return "Explore this transparency log" }
+func (i logItem) Description() string { return fmt.Sprintf("Type: %s | URL: %s", i.logType, i.url) }
 func (i logItem) FilterValue() string { return i.origin }
 
 // Messages for the Bubble Tea loop.
@@ -74,7 +76,18 @@ type Model struct {
 func NewModel(origins []string, clients map[string]logClient, dist distclient.RestDistributor, witVers []note.Verifier, initialLog string) *Model {
 	items := make([]list.Item, len(origins))
 	for i, o := range origins {
-		items[i] = logItem{origin: o}
+		client, ok := clients[o]
+		logType := "unknown"
+		urlStr := "unknown"
+		if ok && client != nil {
+			logType = client.GetLogType()
+			urlStr = client.GetURL()
+		}
+		items[i] = logItem{
+			origin:  o,
+			logType: logType,
+			url:     urlStr,
+		}
 	}
 
 	l := list.New(items, list.NewDefaultDelegate(), 0, 0)
@@ -322,7 +335,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.activeErr = msg.err
 		if msg.err == nil {
 			m.leaf = msg.leaf
-			m.viewport.SetContent(string(msg.leaf.Contents))
+			m.viewport.SetContent(m.currentClient.FormatLeaf(msg.leaf.Contents))
 		}
 
 	case spinner.TickMsg:
