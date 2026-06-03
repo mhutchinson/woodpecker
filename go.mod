@@ -3,19 +3,21 @@ module github.com/mhutchinson/woodpecker
 go 1.25.0
 
 require (
+	filippo.io/sunlight v0.8.0
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/transparency-dev/distributor v0.3.0
-	github.com/transparency-dev/formats v0.1.0
+	github.com/transparency-dev/formats v0.1.1
 	github.com/transparency-dev/serverless-log v0.0.0-20240507164215-bf5370b31f94
 	github.com/transparency-dev/trillian-tessera v0.0.0-20240827143803-0cfc4330d4f8
 	golang.org/x/mod v0.36.0
+	golang.org/x/sync v0.20.0
 	k8s.io/klog/v2 v2.140.0
 )
 
 require (
-	filippo.io/sunlight v0.8.0 // indirect
+	filippo.io/mldsa v0.0.0-20260215214346-43d0283efc3e // indirect
 	filippo.io/torchwood v0.8.0 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
@@ -41,8 +43,7 @@ require (
 	github.com/sahilm/fuzzy v0.1.1 // indirect
 	github.com/transparency-dev/merkle v0.0.2 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	golang.org/x/crypto v0.44.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.38.0 // indirect
-	golang.org/x/text v0.31.0 // indirect
+	golang.org/x/crypto v0.52.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 )
