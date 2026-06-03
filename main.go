@@ -599,7 +599,7 @@ func (c *staticCTLogClient) GetCheckpoint() (*model.Checkpoint, error) {
 		}
 
 		c.mu.Lock()
-		if cp.Tree.N > c.latestTree.N {
+		if cp.N > c.latestTree.N {
 			c.latestTree = cp.Tree
 		}
 		c.mu.Unlock()
@@ -611,17 +611,17 @@ func (c *staticCTLogClient) GetCheckpoint() (*model.Checkpoint, error) {
 		}
 		sb.WriteString("\n")
 		for _, sig := range n.Sigs {
-			sb.WriteString(fmt.Sprintf("\u2014 %s %s\n", sig.Name, sig.Base64))
+			fmt.Fprintf(&sb, "\u2014 %s %s\n", sig.Name, sig.Base64)
 		}
 		for _, sig := range n.UnverifiedSigs {
-			sb.WriteString(fmt.Sprintf("\u2014 %s %s\n", sig.Name, sig.Base64))
+			fmt.Fprintf(&sb, "\u2014 %s %s\n", sig.Name, sig.Base64)
 		}
 
 		return &model.Checkpoint{
 			Checkpoint: &log.Checkpoint{
 				Origin: cp.Origin,
-				Size:   uint64(cp.Tree.N),
-				Hash:   cp.Tree.Hash[:],
+				Size:   uint64(cp.N),
+				Hash:   cp.Hash[:],
 			},
 			Note: n,
 			Raw:  []byte(sb.String()),
@@ -689,15 +689,15 @@ func (c *staticCTLogClient) FormatLeaf(leaf []byte) string {
 
 func formatCert(cert *x509.Certificate) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Subject: %s\n", cert.Subject))
-	sb.WriteString(fmt.Sprintf("Issuer: %s\n", cert.Issuer))
-	sb.WriteString(fmt.Sprintf("Serial Number: %s\n", cert.SerialNumber))
-	sb.WriteString(fmt.Sprintf("Not Before: %s\n", cert.NotBefore.Format(time.RFC3339)))
-	sb.WriteString(fmt.Sprintf("Not After: %s\n", cert.NotAfter.Format(time.RFC3339)))
+	fmt.Fprintf(&sb, "Subject: %s\n", cert.Subject)
+	fmt.Fprintf(&sb, "Issuer: %s\n", cert.Issuer)
+	fmt.Fprintf(&sb, "Serial Number: %s\n", cert.SerialNumber)
+	fmt.Fprintf(&sb, "Not Before: %s\n", cert.NotBefore.Format(time.RFC3339))
+	fmt.Fprintf(&sb, "Not After: %s\n", cert.NotAfter.Format(time.RFC3339))
 	if len(cert.DNSNames) > 0 {
 		sb.WriteString("DNS Names:\n")
 		for _, name := range cert.DNSNames {
-			sb.WriteString(fmt.Sprintf("  - %s\n", name))
+			fmt.Fprintf(&sb, "  - %s\n", name)
 		}
 	}
 	return sb.String()

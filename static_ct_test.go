@@ -228,10 +228,14 @@ func TestStaticCTLogClient(t *testing.T) {
 		switch r.URL.Path {
 		case "/checkpoint":
 			w.Header().Set("Content-Type", "text/plain")
-			w.Write([]byte(signedCheckpoint))
+			if _, err := w.Write([]byte(signedCheckpoint)); err != nil {
+				t.Errorf("failed to write checkpoint: %v", err)
+			}
 		case "/tile/data/000.p/1":
 			w.Header().Set("Content-Type", "application/octet-stream")
-			w.Write(tileBytes)
+			if _, err := w.Write(tileBytes); err != nil {
+				t.Errorf("failed to write tile: %v", err)
+			}
 		default:
 			http.Error(w, "not found", http.StatusNotFound)
 		}
@@ -344,10 +348,14 @@ func TestStaticCTLogClientConcurrency(t *testing.T) {
 		switch r.URL.Path {
 		case "/checkpoint":
 			w.Header().Set("Content-Type", "text/plain")
-			w.Write([]byte(signedCheckpoint))
+			if _, err := w.Write([]byte(signedCheckpoint)); err != nil {
+				t.Errorf("failed to write checkpoint: %v", err)
+			}
 		case "/tile/data/000.p/1":
 			w.Header().Set("Content-Type", "application/octet-stream")
-			w.Write(tileBytes)
+			if _, err := w.Write(tileBytes); err != nil {
+				t.Errorf("failed to write tile: %v", err)
+			}
 		default:
 			http.Error(w, "not found", http.StatusNotFound)
 		}
