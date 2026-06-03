@@ -15,6 +15,8 @@ require (
 )
 
 require (
+	filippo.io/sunlight v0.8.0 // indirect
+	filippo.io/torchwood v0.8.0 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/colorprofile v0.4.1 // indirect
@@ -27,6 +29,7 @@ require (
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/golang/glog v1.2.3 // indirect
+	github.com/google/certificate-transparency-go v1.3.2 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
@@ -38,6 +41,8 @@ require (
 	github.com/sahilm/fuzzy v0.1.1 // indirect
 	github.com/transparency-dev/merkle v0.0.2 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
+	golang.org/x/crypto v0.44.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.38.0 // indirect
 	golang.org/x/text v0.31.0 // indirect
 )

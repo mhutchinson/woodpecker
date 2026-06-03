@@ -18,6 +18,11 @@ func (m *mockLogClient) GetCheckpoint() (*model.Checkpoint, error) { return nil,
 func (m *mockLogClient) GetLeaf(size, index uint64) ([]byte, error) {
 	return []byte("leaf"), nil
 }
+func (m *mockLogClient) FormatLeaf(leaf []byte) string {
+	return string(leaf)
+}
+func (m *mockLogClient) GetLogType() string { return "mock" }
+func (m *mockLogClient) GetURL() string     { return "http://mock" }
 
 func TestPrevLeafUnderflow(t *testing.T) {
 	clients := map[string]logClient{
