@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mhutchinson/woodpecker/model"
 	distclient "github.com/transparency-dev/distributor/client"
 	"github.com/transparency-dev/formats/log"
@@ -63,7 +64,6 @@ var (
 
 func main() {
 	flag.Parse()
-	ctx := context.Background()
 
 	switch *customLogType {
 	case "":
@@ -83,38 +83,9 @@ func main() {
 		logClients[c.GetOrigin()] = c
 		logOrigins = append(logOrigins, c.GetOrigin())
 	}
-	model := model.NewViewModel(logOrigins)
-	controller := NewController(model, logClients, *distclient.NewRestDistributor(distURL, httpClient))
 
-	logIdx := 0
-	if len(*origin) > 0 {
-		for i, c := range clients {
-			if *origin == c.GetOrigin() {
-				logIdx = i
-				break
-			}
-		}
-	}
-	controller.SelectLog(clients[logIdx].GetOrigin())
-	go func() {
-		t := time.NewTicker(5 * time.Second)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				controller.RefreshCheckpoint()
-			}
-		}
-	}()
-	view := NewView(controller, model)
-	if err := view.Run(context.Background()); err != nil {
-		panic(err)
-	}
-}
-
-func NewController(model *model.ViewModel, logClients map[string]logClient, distributor distclient.RestDistributor) *Controller {
-	witKeys, err := distributor.GetWitnesses()
+	dist := *distclient.NewRestDistributor(distURL, httpClient)
+	witKeys, err := dist.GetWitnesses()
 	if err != nil {
 		panic(fmt.Sprintf("Witnesses not available: %v", err))
 	}
@@ -126,103 +97,22 @@ func NewController(model *model.ViewModel, logClients map[string]logClient, dist
 		}
 		witVerifiers = append(witVerifiers, v)
 	}
-	return &Controller{
-		Model:        model,
-		LogClients:   logClients,
-		Distributor:  distributor,
-		witVerifiers: witVerifiers,
-	}
-}
 
-type Controller struct {
-	Model        *model.ViewModel
-	LogClients   map[string]logClient
-	Distributor  distclient.RestDistributor
-	witVerifiers []note.Verifier
-
-	current logClient
-}
-
-func (c *Controller) SelectLog(o string) {
-	if n, ok := c.LogClients[o]; ok {
-		c.current = n
-		c.InitFromLog()
-	}
-}
-
-func (c *Controller) InitFromLog() {
-	c.RefreshCheckpoint()
-	if err := c.Model.GetError(); err != nil {
-		klog.Exit(err)
-	}
-	if cp := c.Model.GetCheckpoint(); cp != nil && cp.Size > 0 {
-		size := cp.Size
-		c.GetLeaf(size, size-1)
-	}
-}
-
-func (c *Controller) RefreshCheckpoint() {
-	witnessed := make(chan *model.Checkpoint, 1)
-	// Fetch the witnessed checkpoint in parallel
-	go func() {
-		defer close(witnessed)
-		logID := distclient.LogID(log.ID(c.current.GetOrigin()))
-		bs, err := c.Distributor.GetCheckpointN(logID, c.Model.GetWitnessN())
-		if err != nil {
-			witnessed <- nil
-			return
+	initialLog := clients[0].GetOrigin()
+	if len(*origin) > 0 {
+		for _, c := range clients {
+			if *origin == c.GetOrigin() {
+				initialLog = c.GetOrigin()
+				break
+			}
 		}
-		cp, _, n, _ := log.ParseCheckpoint(bs, c.current.GetOrigin(), c.current.GetVerifier(), c.witVerifiers...)
-		witnessed <- &model.Checkpoint{
-			Checkpoint: cp,
-			Note:       n,
-			Raw:        bs,
-		}
-	}()
-	cp, err := c.current.GetCheckpoint()
-	wCP := <-witnessed
-	c.Model.SetCheckpoint(cp, wCP, err)
-}
-
-func (c *Controller) GetLeaf(size, index uint64) {
-	if index >= size {
-		c.Model.SetLeaf(c.Model.GetLeaf(), fmt.Errorf("cannot fetch leaf bigger than checkpoint size %d", size))
-		return
 	}
-	leaf, err := c.current.GetLeaf(size, index)
-	c.Model.SetLeaf(model.Leaf{
-		Contents: leaf,
-		Index:    index,
-	}, err)
-}
 
-func (c *Controller) PrevLeaf() {
-	idx := c.Model.GetLeaf().Index
-	if idx > 0 {
-		size := c.Model.GetCheckpoint().Size
-		c.GetLeaf(size, idx-1)
+	pModel := NewModel(logOrigins, logClients, dist, witVerifiers, initialLog)
+	p := tea.NewProgram(pModel, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		panic(err)
 	}
-}
-
-func (c *Controller) NextLeaf() {
-	size := c.Model.GetCheckpoint().Size
-	idx := c.Model.GetLeaf().Index
-	if idx+1 < size {
-		c.GetLeaf(size, idx+1)
-	}
-}
-
-func (c *Controller) IncWitnesses() {
-	c.Model.SetWitnessN(c.Model.GetWitnessN() + 1)
-	c.RefreshCheckpoint()
-}
-
-func (c *Controller) DecWitnesses() {
-	if c.Model.GetWitnessN() <= 1 {
-		return
-	}
-	c.Model.SetWitnessN(c.Model.GetWitnessN() - 1)
-	c.RefreshCheckpoint()
 }
 
 type logClient interface {
