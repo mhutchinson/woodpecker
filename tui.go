@@ -162,17 +162,21 @@ func (m *Model) selectLog(origin string) {
 }
 
 func (m *Model) fetchCheckpointCmd() tea.Cmd {
+	client := m.currentClient
+	distributor := m.distributor
+	witnessN := m.witnessN
+	witVerifiers := m.witVerifiers
 	return func() tea.Msg {
 		witnessed := make(chan *model.Checkpoint, 1)
 		go func() {
 			defer close(witnessed)
-			logID := distclient.LogID(log.ID(m.currentClient.GetOrigin()))
-			bs, err := m.distributor.GetCheckpointN(logID, m.witnessN)
+			logID := distclient.LogID(log.ID(client.GetOrigin()))
+			bs, err := distributor.GetCheckpointN(logID, witnessN)
 			if err != nil {
 				witnessed <- nil
 				return
 			}
-			cp, _, n, err := log.ParseCheckpoint(bs, m.currentClient.GetOrigin(), m.currentClient.GetVerifier(), m.witVerifiers...)
+			cp, _, n, err := log.ParseCheckpoint(bs, client.GetOrigin(), client.GetVerifier(), witVerifiers...)
 			if err != nil {
 				witnessed <- nil
 				return
@@ -184,7 +188,7 @@ func (m *Model) fetchCheckpointCmd() tea.Cmd {
 			}
 		}()
 
-		cp, err := m.currentClient.GetCheckpoint()
+		cp, err := client.GetCheckpoint()
 		wCP := <-witnessed
 
 		return checkpointMsg{
@@ -196,14 +200,16 @@ func (m *Model) fetchCheckpointCmd() tea.Cmd {
 }
 
 func (m *Model) fetchLeafCmd(index uint64) tea.Cmd {
+	checkpoint := m.checkpoint
+	client := m.currentClient
 	return func() tea.Msg {
-		if m.checkpoint == nil || m.checkpoint.Size == 0 {
+		if checkpoint == nil || checkpoint.Size == 0 {
 			return leafMsg{err: fmt.Errorf("no checkpoint loaded")}
 		}
-		if index >= m.checkpoint.Size {
-			return leafMsg{err: fmt.Errorf("cannot fetch leaf bigger than checkpoint size %d", m.checkpoint.Size)}
+		if index >= checkpoint.Size {
+			return leafMsg{err: fmt.Errorf("cannot fetch leaf bigger than checkpoint size %d", checkpoint.Size)}
 		}
-		leafBytes, err := m.currentClient.GetLeaf(m.checkpoint.Size, index)
+		leafBytes, err := client.GetLeaf(checkpoint, index)
 		return leafMsg{
 			leaf: model.Leaf{
 				Contents: leafBytes,
@@ -363,6 +369,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil {
 			m.leaf = msg.leaf
 			m.viewport.SetContent(m.currentClient.FormatLeaf(msg.leaf.Contents))
+		} else {
+			m.viewport.SetContent(fmt.Sprintf("Error fetching leaf: %v", msg.err))
 		}
 
 	case spinner.TickMsg:

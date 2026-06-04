@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -15,7 +16,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"filippo.io/sunlight"
@@ -24,6 +24,8 @@ import (
 	distclient "github.com/transparency-dev/distributor/client"
 	"github.com/transparency-dev/formats/log"
 	tnote "github.com/transparency-dev/formats/note"
+	"github.com/transparency-dev/merkle/proof"
+	"github.com/transparency-dev/merkle/rfc6962"
 	serverless_client "github.com/transparency-dev/serverless-log/client"
 	tiles_client "github.com/transparency-dev/trillian-tessera/client"
 	"golang.org/x/mod/sumdb/note"
@@ -181,7 +183,7 @@ type logClient interface {
 	GetOrigin() string
 	GetVerifier() note.Verifier
 	GetCheckpoint() (*model.Checkpoint, error)
-	GetLeaf(size, index uint64) ([]byte, error)
+	GetLeaf(checkpoint *model.Checkpoint, index uint64) ([]byte, error)
 	FormatLeaf(leaf []byte) string
 	GetLogType() string
 	GetURL() string
@@ -246,15 +248,38 @@ func (c *tLogTilesLogClient) GetCheckpoint() (*model.Checkpoint, error) {
 	}, err
 }
 
-func (c *tLogTilesLogClient) GetLeaf(size, index uint64) ([]byte, error) {
+func (c *tLogTilesLogClient) GetLeaf(checkpoint *model.Checkpoint, index uint64) ([]byte, error) {
+	if checkpoint == nil {
+		return nil, errors.New("checkpoint is nil")
+	}
+	if index >= checkpoint.Size {
+		return nil, fmt.Errorf("index %d out of bounds for checkpoint size %d", index, checkpoint.Size)
+	}
 	bundleIndex := index / 256
 	leafOffset := index % 256
 	// TODO(mhutchinson): cache the bundle so consecutive leaf fetching is efficient
-	bundle, err := tiles_client.GetEntryBundle(context.Background(), c.fetcher, bundleIndex, size)
+	bundle, err := tiles_client.GetEntryBundle(context.Background(), c.fetcher, bundleIndex, checkpoint.Size)
 	if err != nil {
 		return nil, err
 	}
-	return bundle.Entries[leafOffset], nil
+	leaf := bundle.Entries[leafOffset]
+
+	pb, err := tiles_client.NewProofBuilder(context.Background(), *checkpoint.Checkpoint, c.fetcher)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create proof builder: %w", err)
+	}
+	incProof, err := pb.InclusionProof(context.Background(), index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build inclusion proof: %w", err)
+	}
+
+	h := rfc6962.DefaultHasher
+	leafHash := h.HashLeaf(leaf)
+	if err := proof.VerifyInclusion(h, index, checkpoint.Size, leafHash, incProof, checkpoint.Hash); err != nil {
+		return nil, fmt.Errorf("failed to verify inclusion proof: %w", err)
+	}
+
+	return leaf, nil
 }
 
 func (c *tLogTilesLogClient) FormatLeaf(leaf []byte) string {
@@ -314,9 +339,34 @@ func (c *serverlessLogClient) GetCheckpoint() (*model.Checkpoint, error) {
 	}, err
 }
 
-func (c *serverlessLogClient) GetLeaf(size, index uint64) ([]byte, error) {
+func (c *serverlessLogClient) GetLeaf(checkpoint *model.Checkpoint, index uint64) ([]byte, error) {
+	if checkpoint == nil {
+		return nil, errors.New("checkpoint is nil")
+	}
+	if index >= checkpoint.Size {
+		return nil, fmt.Errorf("index %d out of bounds for checkpoint size %d", index, checkpoint.Size)
+	}
 	leaf, err := serverless_client.GetLeaf(context.Background(), c.fetcher, index)
-	return leaf, err
+	if err != nil {
+		return nil, err
+	}
+
+	h := rfc6962.DefaultHasher
+	pb, err := serverless_client.NewProofBuilder(context.Background(), *checkpoint.Checkpoint, h.HashChildren, c.fetcher)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create proof builder: %w", err)
+	}
+	incProof, err := pb.InclusionProof(context.Background(), index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build inclusion proof: %w", err)
+	}
+
+	leafHash := h.HashLeaf(leaf)
+	if err := proof.VerifyInclusion(h, index, checkpoint.Size, leafHash, incProof, checkpoint.Hash); err != nil {
+		return nil, fmt.Errorf("failed to verify inclusion proof: %w", err)
+	}
+
+	return leaf, nil
 }
 
 func (c *serverlessLogClient) FormatLeaf(leaf []byte) string {
@@ -378,7 +428,37 @@ func (c *sumDBLogClient) GetCheckpoint() (*model.Checkpoint, error) {
 	}, err
 }
 
-func (c *sumDBLogClient) GetLeaf(size, index uint64) ([]byte, error) {
+func (c *sumDBLogClient) Height() int {
+	return 8
+}
+
+func (c *sumDBLogClient) ReadTiles(tiles []tlog.Tile) ([][]byte, error) {
+	var data [][]byte
+	for _, t := range tiles {
+		if t.L < 0 {
+			return nil, fmt.Errorf("unexpected data tile request in ReadTiles: %v", t)
+		}
+		path := "/" + t.Path()
+		b, err := c.fetcher(context.Background(), path)
+		if err != nil {
+			return nil, err
+		}
+		data = append(data, b)
+	}
+	return data, nil
+}
+
+func (c *sumDBLogClient) SaveTiles(tiles []tlog.Tile, data [][]byte) {
+	// no-op
+}
+
+func (c *sumDBLogClient) GetLeaf(checkpoint *model.Checkpoint, index uint64) ([]byte, error) {
+	if checkpoint == nil {
+		return nil, errors.New("checkpoint is nil")
+	}
+	if index >= checkpoint.Size {
+		return nil, fmt.Errorf("index %d out of bounds for checkpoint size %d", index, checkpoint.Size)
+	}
 	const pathBase = 1000
 	offset := index / 256
 	nStr := fmt.Sprintf("%03d", offset%pathBase)
@@ -409,7 +489,27 @@ func (c *sumDBLogClient) GetLeaf(size, index uint64) ([]byte, error) {
 		return result
 	}
 	leaves := dataToLeaves(data)
-	return leaves[index%256], nil
+	leafOffset := index % 256
+	if len(leaves) <= int(leafOffset) {
+		return nil, fmt.Errorf("tile data truncated: expected at least %d leaves, got %d", leafOffset+1, len(leaves))
+	}
+	leaf := leaves[leafOffset]
+
+	var th tlog.Hash
+	copy(th[:], checkpoint.Hash)
+	tree := tlog.Tree{N: int64(checkpoint.Size), Hash: th}
+	hr := tlog.TileHashReader(tree, c)
+	proof, err := tlog.ProveRecord(tree.N, int64(index), hr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prove record: %w", err)
+	}
+
+	leafHash := tlog.RecordHash(leaf)
+	if err := tlog.CheckRecord(proof, tree.N, tree.Hash, int64(index), leafHash); err != nil {
+		return nil, fmt.Errorf("failed to check record: %w", err)
+	}
+
+	return leaf, nil
 }
 
 func (c *sumDBLogClient) FormatLeaf(leaf []byte) string {
@@ -569,9 +669,6 @@ type staticCTLogClient struct {
 	verifier note.Verifier
 	client   *sunlight.Client
 
-	mu         sync.RWMutex
-	latestTree tlog.Tree
-
 	sfg singleflight.Group
 }
 
@@ -597,12 +694,6 @@ func (c *staticCTLogClient) GetCheckpoint() (*model.Checkpoint, error) {
 		if err != nil {
 			return nil, err
 		}
-
-		c.mu.Lock()
-		if cp.N > c.latestTree.N {
-			c.latestTree = cp.Tree
-		}
-		c.mu.Unlock()
 
 		var sb strings.Builder
 		sb.WriteString(n.Text)
@@ -633,23 +724,16 @@ func (c *staticCTLogClient) GetCheckpoint() (*model.Checkpoint, error) {
 	return val.(*model.Checkpoint), nil
 }
 
-func (c *staticCTLogClient) GetLeaf(size, index uint64) ([]byte, error) {
-	c.mu.RLock()
-	tree := c.latestTree
-	c.mu.RUnlock()
-
-	if tree.N <= int64(index) {
-		_, err := c.GetCheckpoint()
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch latest checkpoint: %w", err)
-		}
-		c.mu.RLock()
-		tree = c.latestTree
-		c.mu.RUnlock()
-		if tree.N <= int64(index) {
-			return nil, fmt.Errorf("index %d still out of bounds for fetched tree size %d", index, tree.N)
-		}
+func (c *staticCTLogClient) GetLeaf(checkpoint *model.Checkpoint, index uint64) ([]byte, error) {
+	if checkpoint == nil {
+		return nil, errors.New("checkpoint is nil")
 	}
+	if index >= checkpoint.Size {
+		return nil, fmt.Errorf("index %d out of bounds for checkpoint size %d", index, checkpoint.Size)
+	}
+	var th tlog.Hash
+	copy(th[:], checkpoint.Hash)
+	tree := tlog.Tree{N: int64(checkpoint.Size), Hash: th}
 
 	entry, _, err := c.client.Entry(context.Background(), tree, int64(index))
 	if err != nil {

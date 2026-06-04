@@ -262,7 +262,7 @@ func TestStaticCTLogClient(t *testing.T) {
 	}
 
 	// Test GetLeaf
-	leafBytesRet, err := client.GetLeaf(1, 0)
+	leafBytesRet, err := client.GetLeaf(cp, 0)
 	if err != nil {
 		t.Fatalf("failed to get leaf: %v", err)
 	}
@@ -271,6 +271,16 @@ func TestStaticCTLogClient(t *testing.T) {
 	formatted := client.FormatLeaf(leafBytesRet)
 	if !strings.Contains(formatted, "Subject: CN=woodpecker.test") {
 		t.Errorf("expected Subject in formatted leaf, got:\n%s", formatted)
+	}
+
+	// Test GetLeaf with nil checkpoint
+	if _, err := client.GetLeaf(nil, 0); err == nil {
+		t.Error("expected error for nil checkpoint, got nil")
+	}
+
+	// Test GetLeaf with out-of-bounds index
+	if _, err := client.GetLeaf(cp, cp.Size); err == nil {
+		t.Errorf("expected error for index %d >= size %d, got nil", cp.Size, cp.Size)
 	}
 }
 
@@ -395,7 +405,12 @@ func TestStaticCTLogClientConcurrency(t *testing.T) {
 				case <-ctx.Done():
 					return
 				default:
-					if _, err := client.GetLeaf(1, 0); err != nil {
+					cp, err := client.GetCheckpoint()
+					if err != nil {
+						t.Errorf("GetCheckpoint error: %v", err)
+						return
+					}
+					if _, err := client.GetLeaf(cp, 0); err != nil {
 						t.Errorf("GetLeaf error: %v", err)
 						return
 					}

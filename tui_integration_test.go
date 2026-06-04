@@ -18,13 +18,15 @@ type customMockClient struct {
 	url     string
 }
 
-func (c *customMockClient) GetOrigin() string                          { return c.origin }
-func (c *customMockClient) GetVerifier() note.Verifier                 { return nil }
-func (c *customMockClient) GetCheckpoint() (*model.Checkpoint, error)  { return nil, nil }
-func (c *customMockClient) GetLeaf(size, index uint64) ([]byte, error) { return nil, nil }
-func (c *customMockClient) FormatLeaf(leaf []byte) string              { return "" }
-func (c *customMockClient) GetLogType() string                         { return c.logType }
-func (c *customMockClient) GetURL() string                             { return c.url }
+func (c *customMockClient) GetOrigin() string                         { return c.origin }
+func (c *customMockClient) GetVerifier() note.Verifier                { return nil }
+func (c *customMockClient) GetCheckpoint() (*model.Checkpoint, error) { return nil, nil }
+func (c *customMockClient) GetLeaf(checkpoint *model.Checkpoint, index uint64) ([]byte, error) {
+	return nil, nil
+}
+func (c *customMockClient) FormatLeaf(leaf []byte) string { return "" }
+func (c *customMockClient) GetLogType() string            { return c.logType }
+func (c *customMockClient) GetURL() string                { return c.url }
 
 type mockDistributor struct {
 	checkpoint []byte
