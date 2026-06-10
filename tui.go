@@ -220,6 +220,18 @@ func (m *Model) fetchLeafCmd(index uint64) tea.Cmd {
 	}
 }
 
+func (m *Model) layoutHeights() (int, int) {
+	checkpointHeight := 8
+	if m.height < 19 {
+		checkpointHeight = 5
+	}
+	viewportHeight := m.height - checkpointHeight - 6
+	if viewportHeight < 5 {
+		viewportHeight = 5
+	}
+	return checkpointHeight, viewportHeight
+}
+
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
@@ -326,19 +338,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
-		checkpointHeight := 8
-		if m.height < 25 {
-			checkpointHeight = 5
-		}
+		_, viewportHeight := m.layoutHeights()
 
-		viewportHeight := m.height - checkpointHeight - 10
-		if viewportHeight < 5 {
-			viewportHeight = 5
-		}
-
-		vpHeight := viewportHeight - 2
-		if vpHeight < 3 {
-			vpHeight = 3
+		vpHeight := viewportHeight - 4
+		if vpHeight < 1 {
+			vpHeight = 1
 		}
 
 		m.viewport.Width = m.width - 6
@@ -408,24 +412,21 @@ func (m *Model) View() string {
 		colWidth = 20
 	}
 
-	checkpointHeight := 8
-	if m.height < 25 {
-		checkpointHeight = 5
-	}
+	checkpointHeight, viewportHeight := m.layoutHeights()
 
 	panelStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("#6366F1")).
 		Padding(0, 2). // No vertical padding to conserve screen space
 		Width(colWidth).
-		Height(checkpointHeight)
+		Height(checkpointHeight - 2)
 
 	accentPanelStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("#14B8A6")).
 		Padding(0, 2). // No vertical padding to conserve screen space
 		Width(colWidth).
-		Height(checkpointHeight)
+		Height(checkpointHeight - 2)
 
 	var cpText string
 	if m.loadingCheck {
@@ -438,16 +439,17 @@ func (m *Model) View() string {
 		cpText = "No checkpoint data."
 	}
 
-	maxContentLines := checkpointHeight - 2
+	maxContentLines := checkpointHeight - 3
 	if maxContentLines < 1 {
 		maxContentLines = 1
 	}
 
-	// Truncate cpText to fit inside maxContentLines to avoid visual clipping
-	cpLines := strings.Split(cpText, "\n")
-	if len(cpLines) > maxContentLines {
-		cpText = strings.Join(cpLines[:maxContentLines], "\n")
+	usableWidth := colWidth - 6
+	if usableWidth < 10 {
+		usableWidth = 10
 	}
+
+	cpText = limitText(cpText, usableWidth, maxContentLines)
 
 	var witnessedText string
 	if m.loadingCheck {
@@ -456,7 +458,7 @@ func (m *Model) View() string {
 		var wsb strings.Builder
 		fmt.Fprintf(&wsb, "Size: %d\nHash: %x\n", m.witnessed.Size, m.witnessed.Hash)
 		if len(m.witnessed.Note.Sigs) > 1 {
-			wsb.WriteString("\nWitnesses:\n")
+			wsb.WriteString("Witnesses:\n")
 			for _, w := range m.witnessed.Note.Sigs[1:] {
 				wsb.WriteString(" • " + w.Name + "\n")
 			}
@@ -466,16 +468,11 @@ func (m *Model) View() string {
 		witnessedText = "No witnessed signatures found at this level."
 	}
 
-	// Truncate witnessedText to fit inside maxContentLines to avoid visual clipping
-	witLines := strings.Split(witnessedText, "\n")
-	if len(witLines) > maxContentLines {
-		witnessedText = strings.Join(witLines[:maxContentLines], "\n")
-	}
+	witnessedText = limitText(witnessedText, usableWidth, maxContentLines)
 
 	leftPanel := panelStyle.Render(
 		lipgloss.JoinVertical(lipgloss.Left,
 			lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#A78BFA")).Render(fmt.Sprintf("Checkpoint: %s", m.currentLog)),
-			"",
 			cpText,
 		),
 	)
@@ -483,7 +480,6 @@ func (m *Model) View() string {
 	rightPanel := accentPanelStyle.Render(
 		lipgloss.JoinVertical(lipgloss.Left,
 			lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#2DD4BF")).Render(fmt.Sprintf("Witnessed Checkpoint (N=%d)", m.witnessN)),
-			"",
 			witnessedText,
 		),
 	)
@@ -492,17 +488,13 @@ func (m *Model) View() string {
 	sb.WriteString("\n\n") // Space: 1 line
 
 	// Lower Panel (dynamic depending on view)
-	viewportHeight := m.height - checkpointHeight - 10
-	if viewportHeight < 5 {
-		viewportHeight = 5
-	}
 
 	mainBoxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("#A78BFA")).
 		Padding(0, 2). // No vertical padding to conserve screen space
 		Width(m.width - 2).
-		Height(viewportHeight)
+		Height(viewportHeight - 2)
 
 	switch m.activeView {
 	case "logs":
@@ -643,4 +635,31 @@ func fuzzyFilter(query string, targets []string) []list.Rank {
 		ranks[i] = sr.Rank
 	}
 	return ranks
+}
+
+func limitText(text string, maxWidth, maxHeight int) string {
+	lines := strings.Split(text, "\n")
+	var limitedLines []string
+	for _, line := range lines {
+		if len(limitedLines) >= maxHeight {
+			break
+		}
+		if len(line) > maxWidth {
+			if maxWidth > 3 {
+				limitedLines = append(limitedLines, line[:maxWidth-3]+"...")
+			} else {
+				limitedLines = append(limitedLines, line[:maxWidth])
+			}
+		} else {
+			limitedLines = append(limitedLines, line)
+		}
+	}
+	// Pad with empty lines if we have fewer lines than maxHeight,
+	// to ensure consistent height.
+	// Actually, lipgloss Style.Height should handle padding if we set it,
+	// but since we set Style.Height, we don't need to pad manually here
+	// as long as we don't exceed it.
+	// But wait, if we don't pad, lipgloss will pad it.
+	// So just returning truncated is fine.
+	return strings.Join(limitedLines, "\n")
 }

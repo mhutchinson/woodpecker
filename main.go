@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -52,8 +53,51 @@ var (
 	customLogType   = flag.String("custom_log_type", "", "The type of the custom log specified by the other custom_* flags. Must be empty, or one of {tiles, serverless, static-ct}.")
 )
 
+func initLogging() (*os.File, error) {
+	// Check if user explicitly requested logging to stderr
+	logToStderr := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "logtostderr" && f.Value.String() == "true" {
+			logToStderr = true
+		}
+		if f.Name == "alsologtostderr" && f.Value.String() == "true" {
+			logToStderr = true
+		}
+	})
+
+	if logToStderr {
+		return nil, nil
+	}
+
+	// Otherwise, redirect klog to a file
+	logPath := filepath.Join(os.TempDir(), "woodpecker.log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		// Fallback to discard if we can't write to file
+		klog.SetOutput(io.Discard)
+		return nil, err
+	}
+
+	klog.SetOutput(logFile)
+	// Try to set logtostderr to false to prevent it from bypassing SetOutput
+	_ = flag.Set("logtostderr", "false")
+	_ = flag.Set("alsologtostderr", "false")
+	// Only send FATAL logs to stderr (which exits anyway)
+	_ = flag.Set("stderrthreshold", "3")
+
+	return logFile, nil
+}
+
 func main() {
 	flag.Parse()
+	if lf, err := initLogging(); err == nil && lf != nil {
+		defer func() {
+			if err := lf.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error closing log file: %v\n", err)
+			}
+		}()
+	}
+	defer klog.Flush()
 
 	// Initialize built-in clients
 	builtInClients := []struct {
