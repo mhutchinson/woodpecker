@@ -3,18 +3,18 @@ module github.com/mhutchinson/woodpecker
 go 1.25.0
 
 require (
-	filippo.io/sunlight v0.8.0
+	filippo.io/sunlight v0.8.1
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
-	github.com/sahilm/fuzzy v0.1.2
+	github.com/sahilm/fuzzy v0.1.3
 	github.com/transparency-dev/distributor v0.3.0
 	github.com/transparency-dev/formats v0.1.1
 	github.com/transparency-dev/merkle v0.0.2
 	github.com/transparency-dev/serverless-log v0.0.0-20240507164215-bf5370b31f94
 	github.com/transparency-dev/trillian-tessera v0.0.0-20240827143803-0cfc4330d4f8
-	golang.org/x/mod v0.36.0
-	golang.org/x/sync v0.20.0
+	golang.org/x/mod v0.37.0
+	golang.org/x/sync v0.21.0
 	k8s.io/klog/v2 v2.140.0
 )
 
