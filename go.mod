@@ -13,8 +13,8 @@ require (
 	github.com/transparency-dev/merkle v0.0.2
 	github.com/transparency-dev/serverless-log v0.0.0-20240507164215-bf5370b31f94
 	github.com/transparency-dev/trillian-tessera v0.0.0-20240827143803-0cfc4330d4f8
-	golang.org/x/mod v0.37.0
-	golang.org/x/sync v0.21.0
+	golang.org/x/mod v0.38.0
+	golang.org/x/sync v0.22.0
 	k8s.io/klog/v2 v2.140.0
 )
 
