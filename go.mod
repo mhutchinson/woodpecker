@@ -2,6 +2,8 @@ module github.com/mhutchinson/woodpecker
 
 go 1.27.0
 
+toolchain go1.27.4
+
 require (
 	filippo.io/sunlight v0.10.0
 	github.com/charmbracelet/bubbles v1.0.0
